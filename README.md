@@ -200,6 +200,42 @@ Start with:
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - [`backend/.env.example`](backend/.env.example) and [`frontend/.env.example`](frontend/.env.example)
 
+## Picking up a task
+
+Work in this repository is tracked as GitHub issues. Contributors and candidates both
+follow the same route: pick one issue, implement it, open a pull request.
+
+```text
+pick an issue ──► comment to claim it ──► fork + branch ──► commit ──► push ──► pull request
+                                                                                      │
+                                                                       review ──► merge to main
+```
+
+1. **Choose an issue.** Browse
+   [open issues](https://github.com/atomityhq/blog-crm/issues) and pick one that is not
+   already assigned. If you are a candidate, use the issue you were pointed at.
+   Nothing suitable? Open an issue yourself with the bug report or feature request form
+   and wait for a maintainer to confirm the scope before you start.
+2. **Claim it.** Comment on the issue saying you are taking it, so nobody duplicates the
+   work. Ask your questions in that thread — the issue is the place to agree on scope.
+3. **Fork and branch.** Fork the repository, then branch from `main` using the prefixes in
+   [CONTRIBUTING.md](CONTRIBUTING.md#workflow): `feat/`, `fix/`, `chore/` or `docs/`,
+   e.g. `git checkout -b feat/tag-filter`.
+4. **Set up locally.** Follow [Local development](#local-development), then run
+   `make install` so the git hooks are active.
+5. **Make the change.** Keep it scoped to the issue — one issue per pull request. Follow
+   the conventions in [`docs/architecture.md`](docs/architecture.md) and add or update
+   tests for what you changed.
+6. **Check before you push.** Run `make check` (backend tests, frontend lint, typecheck and
+   build). The pre-commit hook runs the checks for the parts you staged; the pre-push hook
+   blocks direct pushes to `main`.
+7. **Commit and push.** Use [Conventional Commits](https://www.conventionalcommits.org/),
+   e.g. `feat: add tag filter to posts list`, then push the branch to your fork.
+8. **Open a pull request** against `main`. The template asks for a description, how to test
+   and a checklist — fill in what applies, and link the issue with `Closes #123`.
+9. **Respond to review.** Push follow-up commits to the same branch; a maintainer merges
+   once CI and review are green.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md). Security issues: see [SECURITY.md](SECURITY.md).
