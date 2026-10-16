@@ -14,7 +14,11 @@ blogcms:
   jwt:
     secret: local-development-secret-not-for-production-use
   media:
-    storage-path: ./data/media
+    nextcloud:
+      url: ${NEXTCLOUD_URL}
+      username: ${NEXTCLOUD_USERNAME}
+      password: ${NEXTCLOUD_PASSWORD}
+      remote-directory: ${NEXTCLOUD_REMOTE_DIRECTORY:/BlogCMS}
 
 logging:
   pattern:
