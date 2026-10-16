@@ -22,7 +22,7 @@ The hooks live in `.githooks/`. To skip them once, in an emergency, use `--no-ve
 
 1. Branch from `main`: `feat/<short-name>`, `fix/<short-name>`, `chore/<short-name>`, `docs/<short-name>`.
 2. Keep pull requests small and focused on one change.
-3. Run `make check` before opening a pull request — it runs backend tests and the frontend lint, typecheck and build.
+3. Run `make check` before opening a pull request — it runs backend tests and the frontend lint, typecheck, tests and build.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/): `feat: add tag filter to posts list`, `fix(backend): ...`.
 
 ## Conventions
