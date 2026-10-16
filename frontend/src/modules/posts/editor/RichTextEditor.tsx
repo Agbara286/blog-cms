@@ -5,9 +5,11 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extensions";
+import { Markdown } from "@tiptap/markdown";
 import {
   Bold,
   Code,
+  FileUp,
   Heading2,
   Heading3,
   ImagePlus,
@@ -29,6 +31,7 @@ import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import { MediaPickerModal } from "@/modules/media/MediaPickerModal";
 import type { ContentDoc } from "@/types/content";
+import { useMarkdownImport } from "./useMarkdownImport";
 
 /**
  * Image node that also remembers which media-library item it came from
@@ -66,6 +69,8 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       }),
       BlogImage,
       Placeholder.configure({ placeholder: "Start writing your post…" }),
+      // For parsing imported .md files only; posts are still saved as JSON.
+      Markdown,
     ],
     content: value,
     // Rendered on the client only; skipping the server pass avoids a hydration mismatch.
@@ -89,6 +94,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
 function Toolbar({ editor }: { editor: Editor }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const markdownImport = useMarkdownImport(editor);
 
   // The toolbar re-renders only when one of these flags changes, not on every keystroke.
   const state = useEditorState({
@@ -137,11 +143,13 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolButton icon={SquareCode} label="Code block" active={state.codeBlock} onClick={() => chain().toggleCodeBlock().run()} />
       <ToolButton icon={Minus} label="Divider" onClick={() => chain().setHorizontalRule().run()} />
       <ToolButton icon={ImagePlus} label="Insert image" onClick={() => setImageOpen(true)} />
+      <ToolButton icon={FileUp} label="Import Markdown file" onClick={markdownImport.openFilePicker} />
       <div className="flex-1" />
       <ToolButton icon={Undo2} label="Undo (Ctrl+Z)" disabled={!state.canUndo} onClick={() => chain().undo().run()} />
       <ToolButton icon={Redo2} label="Redo (Ctrl+Shift+Z)" disabled={!state.canRedo} onClick={() => chain().redo().run()} />
 
       <LinkShortcut editor={editor} onOpen={() => setLinkOpen(true)} />
+      {markdownImport.ui}
       {linkOpen && <LinkDialog editor={editor} onClose={() => setLinkOpen(false)} />}
       {imageOpen && (
         <MediaPickerModal
