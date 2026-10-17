@@ -8,14 +8,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.Resource;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -28,10 +35,12 @@ class NextcloudStorageServiceTest {
     private NextcloudStorageService storage;
 
     private volatile int mkcolStatus = 201;
+    private final AtomicInteger mkcolRequests = new AtomicInteger();
     private volatile int propfindStatus = 207;
     private volatile int putStatus = 201;
     private volatile int getFailureStatus;
     private volatile int deleteStatus = 204;
+    private volatile int moveStatus = 201;
 
     private static final String DAV_ROOT = "/remote.php/dav/files/test-user";
     private static final String AUTHORIZATION = "Basic " + Base64.getEncoder().encodeToString(
@@ -50,6 +59,7 @@ class NextcloudStorageServiceTest {
                 "/BlogCMS");
 
         storage = new NextcloudStorageService(properties);
+        mkcolRequests.set(0);
     }
 
     @AfterEach
@@ -183,6 +193,98 @@ class NextcloudStorageServiceTest {
                 "WebDAV requests must include the configured Basic Auth header");
     }
 
+    @Test
+    void removesTemporaryFileWhenPublishingFails() {
+        moveStatus = 500;
+
+        ApiException exception = assertThrows(
+                ApiException.class,
+                () -> storage.store("images/test.png", new byte[] { 1, 2, 3 }));
+
+        assertTrue(exception.getMessage().contains("temporarily unavailable"));
+        assertFalse(files.containsKey(DAV_ROOT + "/BlogCMS/images/test.png"));
+
+        assertFalse(files.keySet().stream()
+                .anyMatch(path -> path.contains(".uploading")));
+    }
+
+    @Test
+    void removesTemporaryFileWhenUploadFails() {
+        putStatus = 500;
+
+        ApiException exception = assertThrows(
+                ApiException.class,
+                () -> storage.store("images/test.png", new byte[] { 1, 2, 3 }));
+
+        assertTrue(exception.getMessage().contains("temporarily unavailable"));
+        assertFalse(files.containsKey(DAV_ROOT + "/BlogCMS/images/test.png"));
+
+        assertFalse(files.keySet().stream()
+                .anyMatch(path -> path.contains(".uploading")));
+
+        assertTrue(requests.stream().anyMatch(
+                request -> request.startsWith("DELETE ")
+                        && request.contains(".uploading")),
+                "The failed temporary upload should trigger cleanup");
+    }
+
+    @Test
+    void reusesDirectoriesAcrossUploads() {
+        storage.store("images/2026/first.png", new byte[] { 1, 2, 3 });
+        int requestsAfterFirstUpload = mkcolRequests.get();
+
+        storage.store("images/2026/second.png", new byte[] { 4, 5, 6 });
+
+        assertTrue(requestsAfterFirstUpload > 0);
+        assertEquals(requestsAfterFirstUpload, mkcolRequests.get());
+    }
+
+    @Test
+    void createsSharedDirectoriesOnlyOnceForConcurrentUploads() throws Exception {
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> firstUpload = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to start first upload");
+                }
+
+                storage.store("images/2026/first.png", new byte[] { 1, 2, 3 });
+                return null;
+            });
+
+            Future<?> secondUpload = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to start second upload");
+                }
+
+                storage.store("images/2026/second.png", new byte[] { 4, 5, 6 });
+                return null;
+            });
+
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+
+            firstUpload.get(10, TimeUnit.SECONDS);
+            secondUpload.get(10, TimeUnit.SECONDS);
+
+            assertTrue(files.containsKey(
+                    DAV_ROOT + "/BlogCMS/images/2026/first.png"));
+            assertTrue(files.containsKey(
+                    DAV_ROOT + "/BlogCMS/images/2026/second.png"));
+
+            // BlogCMS, images, and 2026 should each be created only once.
+            assertEquals(3, mkcolRequests.get());
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
     private void handleWebDav(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
         String method = exchange.getRequestMethod();
@@ -198,7 +300,10 @@ class NextcloudStorageServiceTest {
         }
 
         switch (method) {
-            case "MKCOL" -> respond(exchange, mkcolStatus);
+            case "MKCOL" -> {
+                mkcolRequests.incrementAndGet();
+                respond(exchange, mkcolStatus);
+            }
 
             case "PROPFIND" -> respond(exchange, propfindStatus);
 
@@ -208,6 +313,38 @@ class NextcloudStorageServiceTest {
                     files.put(path, content);
                 }
                 respond(exchange, putStatus);
+            }
+
+            case "MOVE" -> {
+                String destinationHeader = exchange.getRequestHeaders().getFirst("Destination");
+
+                if (destinationHeader == null) {
+                    respond(exchange, 400);
+                    return;
+                }
+
+                String destination = URI.create(destinationHeader).getPath();
+                String destinationPrefix = DAV_ROOT + "/BlogCMS/";
+
+                if (!destination.startsWith(destinationPrefix)) {
+                    respond(exchange, 400);
+                    return;
+                }
+
+                if (moveStatus < 200 || moveStatus >= 300) {
+                    respond(exchange, moveStatus);
+                    return;
+                }
+
+                byte[] content = files.remove(path);
+
+                if (content == null) {
+                    respond(exchange, 404);
+                    return;
+                }
+
+                files.put(destination, content);
+                respond(exchange, moveStatus);
             }
 
             case "GET" -> {

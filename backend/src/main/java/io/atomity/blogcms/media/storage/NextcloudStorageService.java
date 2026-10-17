@@ -5,18 +5,29 @@ import io.atomity.blogcms.shared.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Profile("!test")
 @Service
@@ -26,10 +37,23 @@ public class NextcloudStorageService implements StorageService {
 
     private final StorageProperties properties;
     private final RestClient client;
+    private final HttpClient httpClient;
+
+    private final Set<String> createdDirectories = ConcurrentHashMap.newKeySet();
 
     public NextcloudStorageService(StorageProperties properties) {
         this.properties = properties;
+
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(this.httpClient);
+
+        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+
         this.client = RestClient.builder()
+                .requestFactory(requestFactory)
                 .defaultHeaders(headers -> headers.setBasicAuth(
                         properties.username(), properties.password()))
                 .build();
@@ -38,26 +62,52 @@ public class NextcloudStorageService implements StorageService {
     @Override
     public void store(String key, byte[] content) {
         String path = remotePath(key);
+        String temporaryKey = temporaryKey(key);
+        String temporaryPath = remotePath(temporaryKey);
+        boolean published = false;
 
         try {
             createDirectories(parentPath(path));
 
+            // Upload to a unique temporary path, not the final file.
             client.put()
-                    .uri(remoteUri(path))
+                    .uri(remoteUri(temporaryPath))
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(content)
                     .exchange((request, response) -> {
                         if (!response.getStatusCode().is2xxSuccessful()) {
-                            log.warn("Nextcloud upload failed with HTTP status {}",
+                            log.warn("Nextcloud temporary upload failed with HTTP status {}",
                                     response.getStatusCode().value());
                             throw storageUnavailable();
                         }
                         return null;
                     });
+
+            // Publish the file only after the upload succeeds.
+            client.method(HttpMethod.valueOf("MOVE"))
+                    .uri(remoteUri(temporaryPath))
+                    .header("Destination", remoteUri(path).toString())
+                    .header("Overwrite", "T")
+                    .exchange((request, response) -> {
+                        if (!response.getStatusCode().is2xxSuccessful()) {
+                            log.warn("Nextcloud file move failed with HTTP status {}",
+                                    response.getStatusCode().value());
+                            throw storageUnavailable();
+                        }
+                        return null;
+                    });
+
+            published = true;
+
         } catch (RestClientException ex) {
             log.warn("Nextcloud upload failed ({})",
                     ex.getClass().getSimpleName());
             throw storageUnavailable();
+        } finally {
+            // Best-effort cleanup if upload or publication fails.
+            if (!published) {
+                delete(temporaryKey);
+            }
         }
     }
 
@@ -65,25 +115,41 @@ public class NextcloudStorageService implements StorageService {
     public Resource load(String key) {
         String path = remotePath(key);
 
+        String credentials = properties.username() + ":" + properties.password();
+        String authorization = "Basic " + Base64.getEncoder()
+                .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+
+        HttpRequest request = HttpRequest.newBuilder(remoteUri(path))
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization", authorization)
+                .GET()
+                .build();
+
         try {
-            byte[] content = client.get()
-                    .uri(remoteUri(path))
-                    .exchange((request, response) -> {
-                        if (response.getStatusCode().value() == 404) {
-                            throw ApiException.notFound("Media file");
-                        }
+            HttpResponse<java.io.InputStream> response = httpClient.send(
+                    request, HttpResponse.BodyHandlers.ofInputStream());
 
-                        if (!response.getStatusCode().is2xxSuccessful()) {
-                            log.warn("Nextcloud download failed with HTTP status {}",
-                                    response.getStatusCode().value());
-                            throw storageUnavailable();
-                        }
+            int status = response.statusCode();
 
-                        return response.getBody().readAllBytes();
-                    });
+            if (status == 404) {
+                response.body().close();
+                throw ApiException.notFound("Media file");
+            }
 
-            return new ByteArrayResource(content);
-        } catch (RestClientException ex) {
+            if (status < 200 || status >= 300) {
+                response.body().close();
+                log.warn("Nextcloud download failed with HTTP status {}", status);
+                throw storageUnavailable();
+            }
+
+            // The stream remains open until the caller consumes and closes it.
+            return new InputStreamResource(response.body());
+
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.warn("Nextcloud download was interrupted");
+            throw storageUnavailable();
+        } catch (IOException ex) {
             log.warn("Nextcloud download failed ({})",
                     ex.getClass().getSimpleName());
             throw storageUnavailable();
@@ -115,7 +181,7 @@ public class NextcloudStorageService implements StorageService {
         }
     }
 
-    private void createDirectories(String directory) {
+    private synchronized void createDirectories(String directory) {
         if (directory.isBlank()) {
             return;
         }
@@ -128,21 +194,30 @@ public class NextcloudStorageService implements StorageService {
             }
 
             current.append(segment);
+            String directoryPath = current.toString();
+
+            if (createdDirectories.contains(directoryPath)) {
+                current.append("/");
+                continue;
+            }
 
             try {
                 client.method(HttpMethod.valueOf("MKCOL"))
-                        .uri(remoteUri(current.toString()))
+                        .uri(remoteUri(directoryPath))
                         .exchange((request, response) -> {
                             int status = response.getStatusCode().value();
 
                             if (response.getStatusCode().is2xxSuccessful()) {
+                                createdDirectories.add(directoryPath);
                                 return null;
                             }
 
-                            if (status == 405 && directoryExists(current.toString())) {
+                            // Another request may have created this directory concurrently.
+                            // Verify it exists before caching it.
+                            if (directoryExists(directoryPath)) {
+                                createdDirectories.add(directoryPath);
                                 return null;
                             }
-
                             log.warn("Nextcloud directory creation failed with HTTP status {}",
                                     status);
                             throw storageUnavailable();
@@ -162,8 +237,7 @@ public class NextcloudStorageService implements StorageService {
             return client.method(HttpMethod.valueOf("PROPFIND"))
                     .uri(remoteUri(path))
                     .header("Depth", "0")
-                    .exchange((request, response) ->
-                            response.getStatusCode().value() == 207);
+                    .exchange((request, response) -> response.getStatusCode().value() == 207);
         } catch (RestClientException ex) {
             log.warn("Nextcloud directory verification failed ({})",
                     ex.getClass().getSimpleName());
@@ -183,28 +257,21 @@ public class NextcloudStorageService implements StorageService {
     }
 
     private String remotePath(String key) {
-        String safeKey = validateRelativePath(key, "Invalid storage key");
-        String directory = validateRelativePath(
-                properties.remoteDirectory(), "Invalid remote directory");
+        String safeKey = validateStorageKey(key);
+        String directory = normalizeRemoteDirectory(properties.remoteDirectory());
 
         return directory.isEmpty() ? safeKey : directory + "/" + safeKey;
     }
 
-    private String validateRelativePath(String value, String errorMessage) {
-        if (value == null || value.isBlank() || value.contains("\\")) {
-            if (value != null && value.isBlank()
-                    && value.equals(properties.remoteDirectory())) {
-                return "";
-            }
-            throw new IllegalArgumentException(errorMessage);
+    private String validateStorageKey(String key) {
+        if (key == null || key.isBlank() || key.contains("\\")) {
+            throw new IllegalArgumentException("Invalid storage key");
         }
 
-        String normalized = value.replaceAll("^/+|/+$", "");
+        String normalized = key.replaceAll("^/+|/+$", "");
+
         if (normalized.isEmpty()) {
-            if (value.equals(properties.remoteDirectory())) {
-                return "";
-            }
-            throw new IllegalArgumentException(errorMessage);
+            throw new IllegalArgumentException("Invalid storage key");
         }
 
         boolean invalid = Arrays.stream(normalized.split("/", -1))
@@ -212,8 +279,28 @@ public class NextcloudStorageService implements StorageService {
                         || segment.equals(".")
                         || segment.equals(".."));
 
-        if (invalid || value.startsWith("/") && !value.equals(properties.remoteDirectory())) {
-            throw new IllegalArgumentException(errorMessage);
+        if (invalid) {
+            throw new IllegalArgumentException("Invalid storage key");
+        }
+
+        return normalized;
+    }
+
+    private String normalizeRemoteDirectory(String directory) {
+        if (directory == null || directory.isBlank()) {
+            return "";
+        }
+
+        String normalized = directory.replaceAll("^/+|/+$", "");
+
+        boolean invalid = Arrays.stream(normalized.split("/", -1))
+                .anyMatch(segment -> segment.isBlank()
+                        || segment.equals(".")
+                        || segment.equals("..")
+                        || segment.contains("\\"));
+
+        if (invalid) {
+            throw new IllegalArgumentException("Invalid remote directory");
         }
 
         return normalized;
@@ -222,6 +309,14 @@ public class NextcloudStorageService implements StorageService {
     private String parentPath(String path) {
         int separator = path.lastIndexOf('/');
         return separator < 0 ? "" : path.substring(0, separator);
+    }
+
+    private String temporaryKey(String key) {
+        int separator = key.lastIndexOf('/');
+        String fileName = "." + UUID.randomUUID() + ".uploading";
+
+        return separator < 0 ? fileName
+                : key.substring(0, separator + 1) + fileName;
     }
 
     private ApiException storageUnavailable() {
