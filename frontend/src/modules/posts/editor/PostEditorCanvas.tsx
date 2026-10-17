@@ -96,6 +96,10 @@ function PostEditor({ initial }: { initial: Post | null }) {
   }, []);
 
   const onContentChange = useCallback((content: EditorForm["content"]) => change({ content }), [change]);
+  const onMarkdownSourceChange = useCallback(
+    (markdownSource: EditorForm["markdownSource"]) => change({ markdownSource }),
+    [change],
+  );
 
   const reportError = (error: unknown) => {
     toast.error(error instanceof Error ? error.message : "Something went wrong.");
@@ -282,7 +286,12 @@ function PostEditor({ initial }: { initial: Post | null }) {
               )}
             </div>
           </div>
-          <RichTextEditor value={form.content} onChange={onContentChange} />
+          <RichTextEditor
+            value={form.content}
+            onChange={onContentChange}
+            markdownSource={form.markdownSource}
+            onMarkdownSourceChange={onMarkdownSourceChange}
+          />
         </div>
 
         <aside aria-label="Post settings" className="min-w-0">

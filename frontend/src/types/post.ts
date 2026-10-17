@@ -1,5 +1,6 @@
 import type { AuthorRef } from "./author";
 import type { ContentDoc } from "./content";
+import type { MarkdownSourceRef } from "./markdown";
 import type { MediaRef } from "./media";
 import type { TagRef } from "./tag";
 
@@ -28,6 +29,8 @@ export interface PostSummary {
 export interface Post extends PostSummary {
   content: ContentDoc;
   coverImageAlt: string;
+  /** The .md file the content was imported from. */
+  markdownSource: MarkdownSourceRef | null;
   seoTitle: string;
   metaDescription: string;
   focusKeyword: string;
@@ -44,6 +47,7 @@ export interface PostInput {
   content: ContentDoc;
   coverImageId: string | null;
   coverImageAlt: string;
+  markdownSourceId: string | null;
   seoTitle: string;
   metaDescription: string;
   focusKeyword: string;

@@ -7,28 +7,43 @@ import { useToast } from "@/components/ui/Toast";
 import { isDocEmpty } from "@/lib/content";
 import { clampHeadingLevels, MARKDOWN_EXTENSIONS, readMarkdownFile, validateMarkdownFile } from "@/lib/markdown-import";
 import type { ContentDoc } from "@/types/content";
+import type { MarkdownSourceRef } from "@/types/markdown";
+import { uploadMarkdownSource } from "../api";
 
 interface ParsedImport {
-  fileName: string;
+  file: File;
   doc: ContentDoc;
 }
 
 /** Replaces the post body with an imported .md file (asks first if the post isn't empty). */
-export function useMarkdownImport(editor: Editor) {
+export function useMarkdownImport(editor: Editor | null, onSourceChange: (source: MarkdownSourceRef) => void) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<ParsedImport | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  const apply = ({ fileName, doc }: ParsedImport) => {
-    editor.chain().focus().setContent(doc).run();
-    toast.success(`Imported "${fileName}".`);
+  // The original file is stored first, so a failed upload leaves the post as it was.
+  const apply = async ({ file, doc }: ParsedImport) => {
+    if (!editor) return;
+    setUploading(true);
+    try {
+      const source = await uploadMarkdownSource(file);
+      editor.chain().focus().setContent(doc).run();
+      onSourceChange(source);
+      toast.success(`Imported "${file.name}".`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Couldn't upload "${file.name}".`);
+      throw error;
+    } finally {
+      setUploading(false);
+    }
   };
 
   const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     // Allows picking the same file again.
     event.target.value = "";
-    if (!file) return;
+    if (!file || !editor) return;
 
     const invalid = validateMarkdownFile(file);
     if (invalid) {
@@ -47,13 +62,13 @@ export function useMarkdownImport(editor: Editor) {
         throw new Error(`Couldn't convert "${file.name}" from Markdown.`);
       }
       if (isDocEmpty(doc)) throw new Error(`"${file.name}" has no content to import.`);
-      parsed = { fileName: file.name, doc };
+      parsed = { file, doc };
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Couldn't import "${file.name}".`);
       return;
     }
 
-    if (isDocEmpty(editor.getJSON() as ContentDoc)) apply(parsed);
+    if (isDocEmpty(editor.getJSON() as ContentDoc)) apply(parsed).catch(() => {});
     else setPending(parsed);
   };
 
@@ -73,7 +88,7 @@ export function useMarkdownImport(editor: Editor) {
           title="Replace post content?"
           message={
             <>
-              The content of <strong>{pending.fileName}</strong> will replace everything in the editor. You can undo
+              The content of <strong>{pending.file.name}</strong> will replace everything in the editor. You can undo
               this with Ctrl+Z.
             </>
           }
@@ -85,5 +100,5 @@ export function useMarkdownImport(editor: Editor) {
     </>
   );
 
-  return { openFilePicker: () => inputRef.current?.click(), ui };
+  return { openFilePicker: () => inputRef.current?.click(), uploading, ui };
 }

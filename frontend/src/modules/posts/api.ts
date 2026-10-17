@@ -2,6 +2,7 @@
 
 import { api, apiJson, apiRequest, query } from "@/lib/api-client";
 import type { Page } from "@/types/api";
+import type { MarkdownSourceRef } from "@/types/markdown";
 import type { Post, PostInput, PostListParams, PostStatus, PostSummary } from "@/types/post";
 
 /* Posts API — thin wrappers over the backend's /api/v1/posts endpoints. */
@@ -67,4 +68,11 @@ export function duplicatePost(id: string): Promise<Post> {
 /** DELETE /api/v1/posts/{id} */
 export async function deletePost(id: string): Promise<void> {
   await api("DELETE", `/posts/${id}`);
+}
+
+/** POST /api/v1/markdown-sources (multipart, field `file`) — stores the original .md file of an import. */
+export async function uploadMarkdownSource(file: File): Promise<MarkdownSourceRef> {
+  const form = new FormData();
+  form.append("file", file);
+  return (await apiRequest<MarkdownSourceRef>("/markdown-sources", { method: "POST", body: form })).data;
 }

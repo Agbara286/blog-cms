@@ -9,7 +9,6 @@ import { Markdown } from "@tiptap/markdown";
 import {
   Bold,
   Code,
-  FileUp,
   Heading2,
   Heading3,
   ImagePlus,
@@ -31,6 +30,8 @@ import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import { MediaPickerModal } from "@/modules/media/MediaPickerModal";
 import type { ContentDoc } from "@/types/content";
+import type { MarkdownSourceRef } from "@/types/markdown";
+import { MarkdownSourceBar } from "./MarkdownSourceBar";
 import { useMarkdownImport } from "./useMarkdownImport";
 
 /**
@@ -54,13 +55,15 @@ const BlogImage = Image.extend({
 export interface RichTextEditorProps {
   value: ContentDoc;
   onChange: (doc: ContentDoc) => void;
+  markdownSource: MarkdownSourceRef | null;
+  onMarkdownSourceChange: (source: MarkdownSourceRef | null) => void;
 }
 
 /**
  * The post body editor. Content goes in and out as Tiptap JSON — the format the
  * backend stores — never HTML.
  */
-export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ value, onChange, markdownSource, onMarkdownSourceChange }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -80,12 +83,22 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       attributes: { class: "post-content", "aria-label": "Post content", "aria-multiline": "true", role: "textbox" },
     },
   });
+  const markdownImport = useMarkdownImport(editor, onMarkdownSourceChange);
 
   return (
-    <div className="rounded-lg border-[1.5px] border-line bg-card shadow-card">
-      {editor ? <Toolbar editor={editor} /> : <div className="h-[42px] border-b border-line" />}
-      <EditorContent editor={editor} className="min-h-[420px] px-6 py-5" />
-    </div>
+    <>
+      <MarkdownSourceBar
+        source={markdownSource}
+        uploading={markdownImport.uploading}
+        onImport={markdownImport.openFilePicker}
+        onRemove={() => onMarkdownSourceChange(null)}
+      />
+      {markdownImport.ui}
+      <div className="rounded-lg border-[1.5px] border-line bg-card shadow-card">
+        {editor ? <Toolbar editor={editor} /> : <div className="h-[42px] border-b border-line" />}
+        <EditorContent editor={editor} className="min-h-[420px] px-6 py-5" />
+      </div>
+    </>
   );
 }
 
@@ -94,7 +107,6 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
 function Toolbar({ editor }: { editor: Editor }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
-  const markdownImport = useMarkdownImport(editor);
 
   // The toolbar re-renders only when one of these flags changes, not on every keystroke.
   const state = useEditorState({
@@ -143,13 +155,11 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolButton icon={SquareCode} label="Code block" active={state.codeBlock} onClick={() => chain().toggleCodeBlock().run()} />
       <ToolButton icon={Minus} label="Divider" onClick={() => chain().setHorizontalRule().run()} />
       <ToolButton icon={ImagePlus} label="Insert image" onClick={() => setImageOpen(true)} />
-      <ToolButton icon={FileUp} label="Import Markdown file" onClick={markdownImport.openFilePicker} />
       <div className="flex-1" />
       <ToolButton icon={Undo2} label="Undo (Ctrl+Z)" disabled={!state.canUndo} onClick={() => chain().undo().run()} />
       <ToolButton icon={Redo2} label="Redo (Ctrl+Shift+Z)" disabled={!state.canRedo} onClick={() => chain().redo().run()} />
 
       <LinkShortcut editor={editor} onOpen={() => setLinkOpen(true)} />
-      {markdownImport.ui}
       {linkOpen && <LinkDialog editor={editor} onClose={() => setLinkOpen(false)} />}
       {imageOpen && (
         <MediaPickerModal
