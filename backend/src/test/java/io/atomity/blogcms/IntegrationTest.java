@@ -46,7 +46,7 @@ public abstract class IntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.execute("TRUNCATE posts, authors, tags, media CASCADE");
+        jdbcTemplate.execute("TRUNCATE posts, authors, tags, media, markdown_sources CASCADE");
     }
 
     /** A valid bearer token, fetched once through the real login endpoint. */

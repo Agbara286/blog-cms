@@ -33,6 +33,8 @@ public record PostRequest(
         @Size(max = 300, message = "must be at most 300 characters")
         String coverImageAlt,
 
+        UUID markdownSourceId,
+
         @Size(max = 70, message = "must be at most 70 characters")
         String seoTitle,
 

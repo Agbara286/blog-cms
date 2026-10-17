@@ -2,6 +2,7 @@ package io.atomity.blogcms.post.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.atomity.blogcms.author.dto.AuthorRef;
+import io.atomity.blogcms.markdown.dto.MarkdownSourceRef;
 import io.atomity.blogcms.media.dto.MediaRef;
 import io.atomity.blogcms.post.entity.Post;
 import io.atomity.blogcms.post.entity.PostStatus;
@@ -29,6 +30,7 @@ public record PostResponse(
         Instant updatedAt,
         JsonNode content,
         String coverImageAlt,
+        MarkdownSourceRef markdownSource,
         String seoTitle,
         String metaDescription,
         String focusKeyword,
@@ -39,7 +41,8 @@ public record PostResponse(
         return new PostResponse(post.getId(), post.getTitle(), post.getSlug(), post.getExcerpt(), post.getStatus(),
                 post.isFeatured(), PostSummaryResponse.authorRefs(post), PostSummaryResponse.tagRefs(post),
                 MediaRef.of(post.getCoverImage()), post.getWordCount(), post.getReadingTimeMinutes(), post.getPublishedAt(),
-                post.getCreatedAt(), post.getUpdatedAt(), post.getContent(), post.getCoverImageAlt(), post.getSeoTitle(),
+                post.getCreatedAt(), post.getUpdatedAt(), post.getContent(), post.getCoverImageAlt(),
+                MarkdownSourceRef.of(post.getMarkdownSource()), post.getSeoTitle(),
                 post.getMetaDescription(), post.getFocusKeyword(), post.getCanonicalUrl(), post.getVersion());
     }
 }
