@@ -4,6 +4,7 @@ import io.atomity.blogcms.shared.ApiException;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -29,13 +30,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -54,18 +53,15 @@ public class NextcloudStorageService implements StorageService, AutoCloseable {
     private final Duration requestTimeout;
 
     private final ConcurrentHashMap<String, Long> createdDirectories = new ConcurrentHashMap<>();
-    private final Map<String, DirectoryLock> directoryLocks = new HashMap<>();
+    private final ConcurrentHashMap<String, Object> directoryLocks = new ConcurrentHashMap<>();
     private final long directoryCacheTtlNanos;
-    private final ScheduledExecutorService readWatchdog = Executors.newSingleThreadScheduledExecutor(thread -> {
-        Thread watchdog = new Thread(thread, "nextcloud-read-watchdog");
-        watchdog.setDaemon(true);
-        return watchdog;
-    });
-
-    private static final class DirectoryLock {
-        private final Object monitor = new Object();
-        private int users;
-    }
+    private final ScheduledThreadPoolExecutor readWatchdog = new ScheduledThreadPoolExecutor(
+            Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+            thread -> {
+                Thread watchdog = new Thread(thread, "nextcloud-read-watchdog");
+                watchdog.setDaemon(true);
+                return watchdog;
+            });
 
     private enum PublishResult {
         PUBLISHED,
@@ -73,6 +69,7 @@ public class NextcloudStorageService implements StorageService, AutoCloseable {
         FAILED
     }
 
+    @Autowired
     public NextcloudStorageService(StorageProperties properties) {
         this(properties, Duration.ofSeconds(60), CONNECT_TIMEOUT, REQUEST_TIMEOUT);
     }
@@ -89,6 +86,8 @@ public class NextcloudStorageService implements StorageService, AutoCloseable {
         this.properties = properties;
         this.directoryCacheTtlNanos = directoryCacheTtl.toNanos();
         this.requestTimeout = requestTimeout;
+
+        readWatchdog.setRemoveOnCancelPolicy(true);
 
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(connectTimeout)
@@ -270,56 +269,41 @@ public class NextcloudStorageService implements StorageService, AutoCloseable {
             current.append(segment);
             String directoryPath = current.toString();
 
-            DirectoryLock lock;
-            synchronized (directoryLocks) {
-                lock = directoryLocks.computeIfAbsent(
-                        directoryPath, ignored -> new DirectoryLock());
-                lock.users++;
-            }
+            Object lock = directoryLocks.computeIfAbsent(directoryPath, ignored -> new Object());
 
-            try {
-                synchronized (lock.monitor) {
-                    long now = System.nanoTime();
-                    Long expiresAt = createdDirectories.get(directoryPath);
+            synchronized (lock) {
+                long now = System.nanoTime();
+                Long expiresAt = createdDirectories.get(directoryPath);
 
-                    if (expiresAt != null && now < expiresAt) {
-                        current.append("/");
-                        continue;
-                    }
-
-                    createdDirectories.remove(directoryPath);
-
-                    try {
-                        client.method(HttpMethod.valueOf("MKCOL"))
-                                .uri(remoteUri(directoryPath))
-                                .exchange((request, response) -> {
-                                    if (response.getStatusCode().is2xxSuccessful()
-                                            || directoryExists(directoryPath)) {
-                                        createdDirectories.put(
-                                                directoryPath,
-                                                System.nanoTime()
-                                                        + directoryCacheTtlNanos);
-                                        return null;
-                                    }
-
-                                    log.warn(
-                                            "Nextcloud directory creation failed with HTTP status {}",
-                                            response.getStatusCode().value());
-                                    throw storageUnavailable();
-                                });
-                    } catch (RestClientException ex) {
-                        log.warn(
-                                "Nextcloud directory creation failed ({})",
-                                ex.getClass().getSimpleName());
-                        throw storageUnavailable();
-                    }
+                if (expiresAt != null && now < expiresAt) {
+                    current.append("/");
+                    continue;
                 }
-            } finally {
-                synchronized (directoryLocks) {
-                    lock.users--;
-                    if (lock.users == 0) {
-                        directoryLocks.remove(directoryPath, lock);
-                    }
+
+                createdDirectories.remove(directoryPath);
+
+                try {
+                    client.method(HttpMethod.valueOf("MKCOL"))
+                            .uri(remoteUri(directoryPath))
+                            .exchange((request, response) -> {
+                                if (response.getStatusCode().is2xxSuccessful()
+                                        || directoryExists(directoryPath)) {
+                                    createdDirectories.put(
+                                            directoryPath,
+                                            System.nanoTime() + directoryCacheTtlNanos);
+                                    return null;
+                                }
+
+                                log.warn(
+                                        "Nextcloud directory creation failed with HTTP status {}",
+                                        response.getStatusCode().value());
+                                throw storageUnavailable();
+                            });
+                } catch (RestClientException ex) {
+                    log.warn(
+                            "Nextcloud directory creation failed ({})",
+                            ex.getClass().getSimpleName());
+                    throw storageUnavailable();
                 }
             }
 
@@ -332,8 +316,7 @@ public class NextcloudStorageService implements StorageService, AutoCloseable {
             return client.method(HttpMethod.valueOf("PROPFIND"))
                     .uri(remoteUri(path))
                     .header("Depth", "0")
-                    .exchange((request, response) ->
-                            response.getStatusCode().is2xxSuccessful());
+                    .exchange((request, response) -> response.getStatusCode().is2xxSuccessful());
         } catch (RestClientException ex) {
             log.warn("Nextcloud directory verification failed ({})",
                     ex.getClass().getSimpleName());
@@ -354,7 +337,7 @@ public class NextcloudStorageService implements StorageService, AutoCloseable {
     }
 
     private static boolean isMissingDestinationCollection(int status) {
-        return status == 404;
+        return status == 404 || status == 409;
     }
 
     private static boolean isSuccessful(int status) {

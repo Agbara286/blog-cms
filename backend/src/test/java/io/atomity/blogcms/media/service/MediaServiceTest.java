@@ -43,4 +43,27 @@ class MediaServiceTest {
         assertSame(cleanupFailure, thrown.getSuppressed()[0]);
         verify(storage).delete(any());
     }
+
+    @Test
+    void uploadCleansUpStoredFileWhenDatabaseWriteThrowsError() {
+        MediaRepository mediaRepository = mock(MediaRepository.class);
+        StorageService storage = mock(StorageService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        AssertionError databaseFailure = new AssertionError("database write failed");
+        when(mediaRepository.save(any())).thenThrow(databaseFailure);
+
+        MediaService mediaService = new MediaService(mediaRepository, storage, transactionManager);
+        var file = new MockMultipartFile(
+                "file", "photo.png", "image/png", TestImages.encode("png", 8, 8));
+
+        AssertionError thrown = assertThrows(AssertionError.class, () -> mediaService.upload(file));
+
+        assertSame(databaseFailure, thrown);
+        verify(storage).store(any(), any());
+        verify(storage).delete(any());
+    }
 }
