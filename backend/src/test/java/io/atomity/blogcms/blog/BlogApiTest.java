@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.atomity.blogcms.IntegrationTest;
 import io.atomity.blogcms.media.TestImages;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -238,5 +240,75 @@ class BlogApiTest extends IntegrationTest {
         mockMvc.perform(get("/api/v1/blogs/slug/renamed-post")).andExpect(status().isOk());
 
         mockMvc.perform(get("/api/v1/blogs/slug/no-such-post")).andExpect(status().isNotFound());
+    }
+
+    // ── No leaks ───────────────────────────────────────────────────────────
+
+    @Test
+    void publicResponsesExposeNoEditorOnlyFields() throws Exception {
+        String id = createPost("Clean post", "Clean body.").path("id").asText();
+        publish(id);
+
+        mockMvc.perform(get("/api/v1/blogs"))
+                .andExpect(jsonPath("$.data[0].status").doesNotExist())
+                .andExpect(jsonPath("$.data[0].version").doesNotExist())
+                .andExpect(jsonPath("$.data[0].createdAt").doesNotExist())
+                .andExpect(jsonPath("$.data[0].focusKeyword").doesNotExist());
+
+        mockMvc.perform(get("/api/v1/blogs/" + id))
+                .andExpect(jsonPath("$.data.status").doesNotExist())
+                .andExpect(jsonPath("$.data.version").doesNotExist())
+                .andExpect(jsonPath("$.data.createdAt").doesNotExist())
+                .andExpect(jsonPath("$.data.focusKeyword").doesNotExist());
+
+        mockMvc.perform(get("/api/v1/blogs/slug/clean-post"))
+                .andExpect(jsonPath("$.data.status").doesNotExist())
+                .andExpect(jsonPath("$.data.version").doesNotExist())
+                .andExpect(jsonPath("$.data.createdAt").doesNotExist())
+                .andExpect(jsonPath("$.data.focusKeyword").doesNotExist());
+    }
+
+    @Test
+    void draftContentNeverAppearsInThePublicList() throws Exception {
+        createPost("Secret draft title", "Secret draft body text.");
+        String id = createPost("Public post", "Public body.").path("id").asText();
+        publish(id);
+
+        String response = mockMvc.perform(get("/api/v1/blogs?size=100"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).contains("Public post")
+                .doesNotContain("Secret draft title")
+                .doesNotContain("Secret draft body text");
+    }
+
+    // ── Security boundary ──────────────────────────────────────────────────
+
+    @Test
+    void adminPostEndpointsStillRequireAToken() throws Exception {
+        String id = createPost("Guarded post", "Guarded body.").path("id").asText();
+
+        mockMvc.perform(get("/api/v1/posts")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/posts/" + id)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void blogEndpointsAllowReadsOnlyAndRejectBadTokens() throws Exception {
+        String id = createPost("Read-only post", "Body.").path("id").asText();
+        publish(id);
+
+        // Writes are not part of the public surface.
+        mockMvc.perform(post("/api/v1/blogs")).andExpect(status().isUnauthorized());
+        mockMvc.perform(put("/api/v1/blogs/" + id)).andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/v1/blogs/" + id)).andExpect(status().isUnauthorized());
+
+        // An authenticated caller can read the public list too.
+        call(get("/api/v1/blogs")).andExpect(status().isOk());
+
+        // A malformed token is rejected even on a public path (documented behaviour).
+        mockMvc.perform(get("/api/v1/blogs").header(HttpHeaders.AUTHORIZATION, "Bearer not-a-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errors[0].errorCode").value("UNAUTHORIZED"));
     }
 }
