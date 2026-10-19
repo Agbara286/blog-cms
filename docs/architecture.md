@@ -35,8 +35,9 @@ There is one admin account, configured through environment variables
    (5 per 15 minutes).
 2. The frontend keeps the token in an httpOnly cookie and forwards it as
    `Authorization: Bearer` on every API call.
-3. Everything under `/api/v1` needs the token, except login and
-   `GET /api/v1/media/{id}/file` (images are public so published pages can embed them).
+3. Everything under `/api/v1` needs the token, except login,
+   `GET /api/v1/media/{id}/file` (images are public so published pages can embed them)
+   and the public blog reads (`GET /api/v1/blogs`, `/blogs/{id}`, `/blogs/slug/{slug}`).
 
 ## API
 
@@ -47,6 +48,8 @@ All under `/api/v1`, JSON in camelCase, wrapped in the response envelope.
 | `POST /auth/login` | Exchange admin credentials for a token |
 | `GET /posts?status&q&tag&author&sort&direction&page&size` | Paginated list (`meta` holds page info) |
 | `GET /posts/counts` | Posts per status, for the list tabs |
+| `GET /blogs?sort&direction&page&size` | **Public.** Published posts, newest first (`meta` holds page info) |
+| `GET /blogs/{id}` · `GET /blogs/slug/{slug}` | **Public.** One published post with its full content |
 | `GET/PUT/DELETE /posts/{id}`, `POST /posts` | Read, update (send the loaded `version`), delete, create |
 | `POST /posts/{id}/publish` · `/unpublish` · `/archive` · `/duplicate` | Lifecycle actions |
 | `GET/POST /authors`, `PUT/DELETE /authors/{id}` | Authors |
@@ -67,6 +70,11 @@ All under `/api/v1`, JSON in camelCase, wrapped in the response envelope.
   client's file name or Content-Type. An image used as a cover, inline, or as an avatar
   can't be deleted.
 - Deleting an author or tag removes it from posts; the posts stay.
+- The public blog (the `GET /blogs…` reads) only ever returns `PUBLISHED` posts; anything
+  else — draft, archived, unpublished, unknown — answers `404 NOT_FOUND`, so the existence
+  of a draft is never revealed. Public responses omit the editor-only fields `status`,
+  `version`, `createdAt` and `focusKeyword`; the detail response adds the body and SEO
+  metadata, the list stays body-free with `publishedAt` default-descending.
 
 ## Backend layout
 
@@ -79,6 +87,7 @@ io.atomity.blogcms
 │                      CorrelationFilter, PageMeta, Slugs, Timestamps
 ├── auth/              config/ (SecurityConfig, AuthProperties) controller/ dto/ service/
 ├── post/              controller/ dto/ entity/ repository/ service/ (ContentAnalyzer)
+├── blog/              controller/ dto/ service/ (public, read-only view of published posts)
 ├── author/ tag/       controller/ dto/ entity/ repository/ service/
 └── media/             … plus storage/ (StorageService, local-disk implementation)
 ```
