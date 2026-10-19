@@ -87,9 +87,9 @@ Public calls: `mockMvc.perform(get(...))` (no token). Fixtures: create/publish t
 | ID | Status | Task | Depends | Commit |
 |---|---|---|---|---|
 | T23 | DONE | Full verification: `./gradlew build` green; run stack (`docker compose up -d postgres` + backend `local` profile with dummy `NEXTCLOUD_*`); publish a post via the admin API; run the curl script below; paste real outputs under Notes. | T22 | `docs(tracker): record verification results` |
-| T24 | TODO | Self-review `git diff upstream/main...HEAD` (use `/code-review`); walk `.github/pull_request_template.md` checklist; fix findings, one commit each. | T23 | `fix(backend): …` per finding |
-| T25 | TODO | `git fetch upstream`; if `main` moved, **merge** `upstream/main` into the branch (no force-push), rerun `./gradlew build`. | T24 | `chore: merge upstream main` (only if needed) |
-| T26 | TODO | Draft PR title + body in the appendix below (template sections, `Closes #11`, how to test, honest checklist, design notes incl. "no migration" rationale and out-of-scope list). | T25 | `docs(tracker): draft PR description` |
+| T24 | DONE | Self-review `git diff upstream/main...HEAD` (use `/code-review`); walk `.github/pull_request_template.md` checklist; fix findings, one commit each. | T23 | `fix(backend): …` per finding |
+| T25 | DONE | `git fetch upstream`; if `main` moved, **merge** `upstream/main` into the branch (no force-push), rerun `./gradlew build`. | T24 | `chore: merge upstream main` (only if needed) |
+| T26 | DONE | Draft PR title + body in the appendix below (template sections, `Closes #11`, how to test, honest checklist, design notes incl. "no migration" rationale and out-of-scope list). | T25 | `docs(tracker): draft PR description` |
 | T27 | TODO | Copy the PR body out, then `git rm TRACKER.md CLAUDE.md`. Final PR diff = backend + docs only. | T26 | `chore: remove agent workflow files from PR` |
 | T28 | TODO | **[USER]** Open the PR (browser, or `gh pr create` after `gh auth login`): `vishank020:feat/public-blog-endpoints` → `atomityhq:main`. | T27 | – |
 | T29 | TODO | **[USER]** Open the PR URL in a private/incognito window (signed out) to confirm it loads; reply to the email with the **PR link** (+ fork branch link) by **Sat 24 Oct**. | T28 | – |
@@ -144,6 +144,95 @@ rate limiting · CORS · OpenAPI · new migration/index · new env vars · the s
   - `GET /api/v1/blogs/34c0653f-0019-4303-a0fe-0c3069a01972` (draft) → **404** `{"errors":[{"errorCode":"NOT_FOUND","message":"Blog not found","correlationId":"…"}]}`.
   - `GET /api/v1/posts` (no token) → **401** `UNAUTHORIZED`, admin API still protected.
   Stack torn down afterwards (`docker compose down -v`).
+- _T24 self-review (2026-10-19):_ reviewed `git diff upstream/main...HEAD` (933 insertions across 15 files); `git diff --check` clean; walked `.github/pull_request_template.md` (checklist mapped in the appendix). Findings: none requiring code changes.
+- _T25 sync (2026-10-19):_ `git fetch upstream` → `upstream/main` still `c26cd04` and an ancestor of HEAD; no merge needed, no commit.
 
 ## Appendix — PR description draft (filled in T26)
-_empty_
+
+**Title:** `feat: expose public endpoints to read published blogs`
+
+**Body (paste into the PR; `Closes #11`):**
+
+````markdown
+## Description
+
+Closes #11.
+
+Adds a public, read-only, paginated API for **published** posts, so an external site can
+render the blog without an admin session:
+
+- `GET /api/v1/blogs?sort&direction&page&size` — published posts, **newest first** by
+  default; `meta` carries `page/size/totalElements/totalPages`.
+- `GET /api/v1/blogs/{id}` and `GET /api/v1/blogs/slug/{slug}` — one published post with
+  its full Tiptap body and SEO metadata.
+
+Anything that is not `PUBLISHED` — draft, archived, unpublished, unknown — answers
+`404 NOT_FOUND`, so the existence of a draft is never revealed. The new `blog/` package
+uses its own response DTOs that omit the editor-only fields (`status`, `version`,
+`createdAt`, `focusKeyword`) instead of reusing the admin `PostResponse`. The sort
+whitelist, direction check, size clamp (1–100) and `id` tiebreaker are reused from the
+existing `PostListQuery#toPageable`.
+
+Design notes:
+
+- **No Flyway migration or index**: no schema change is needed; a partial index on
+  `published_at` is a noted follow-up (this also avoids a `V2` version clash with #18).
+- Security matchers are the three exact paths (`/api/v1/blogs`, `/api/v1/blogs/*`,
+  `/api/v1/blogs/slug/*`) — no `/**` wildcard, so future blog routes must opt in.
+- Known behaviour, documented not changed: the bearer filter also runs on public paths,
+  so a malformed or expired `Authorization` header still gets `401` on `/blogs`.
+- Out of scope: tag/author/`q` filters, rate limiting, CORS, ETag caching, frontend.
+
+## Type of change
+
+- [x] New feature
+
+## Steps to reproduce / how to test
+
+1. `cd backend && ./gradlew build` (Docker running; Testcontainers starts Postgres).
+2. Start the stack: `docker compose up -d postgres`, then
+   `SPRING_PROFILES_ACTIVE=local ./gradlew bootRun` (dummy `NEXTCLOUD_*` values are fine).
+3. Sign in as `admin@example.com` / `admin`; create a post and publish it
+   (`POST /api/v1/posts`, then `POST /api/v1/posts/{id}/publish`). Create a second post
+   and leave it as a draft.
+4. `curl -s localhost:8080/api/v1/blogs` → 200, only the published post, newest first,
+   `meta` present.
+5. `curl -s localhost:8080/api/v1/blogs/<id>` and
+   `curl -s localhost:8080/api/v1/blogs/slug/<slug>` → 200 with `content`, without
+   `status/version/createdAt/focusKeyword`.
+6. `curl -si localhost:8080/api/v1/blogs/<draft-id>` → 404 `NOT_FOUND`;
+   `curl -si localhost:8080/api/v1/posts` → 401 — the admin API is unchanged.
+
+**Expected result:** published content is readable without a token, drafts stay invisible
+everywhere, and the admin endpoints remain protected.
+
+## Checklist
+
+**Title**
+
+- [x] The PR title follows `type: short summary` — `feat: expose public endpoints to read published blogs`
+
+**Tests**
+
+- [x] Backend tests pass — `./gradlew build` (the pre-commit hook ran compile + all tests
+  with Testcontainers Postgres on every commit)
+- [ ] N/A — no frontend changes, so `cd frontend && npm run check` is not needed
+- [x] Tests added: `BlogApiTest` (list, ordering/pagination, detail by id and slug, no
+  leaks, security boundary), `BlogListQueryTest` (unit), `BlogQueryCountTest` (batched
+  fetch guard)
+- [x] Tested by hand in the running app (published a post, called all three endpoints
+  without a token, checked a draft answers 404)
+
+**Code**
+
+- [x] The git hooks ran on all commits (no `--no-verify`)
+- [x] No database change — no new Flyway migration needed
+- [ ] N/A — no frontend styling
+- [x] No secrets, tokens or personal data
+
+**Docs & config**
+
+- [x] No new environment variables
+- [x] `docs/architecture.md` (API table, auth, business rules, layout, examples) and
+  `README.md` updated
+````
