@@ -4,8 +4,12 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-/** {@code blogcms.media.*} — where uploads are written on disk. */
+/** Configuration for Nextcloud WebDAV media storage. */
 @Validated
-@ConfigurationProperties(prefix = "blogcms.media")
-public record StorageProperties(@NotBlank String storagePath) {
+@ConfigurationProperties(prefix = "blogcms.media.nextcloud")
+public record StorageProperties(
+        @NotBlank String url,
+        @NotBlank String username,
+        @NotBlank String password,
+        @NotBlank String remoteDirectory) {
 }
