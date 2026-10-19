@@ -94,4 +94,50 @@ class BlogApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.meta.totalElements").value(1))
                 .andExpect(jsonPath("$.meta.totalPages").value(1));
     }
+
+    @Test
+    void listDefaultsToNewestFirstAndValidatesPaging() throws Exception {
+        for (String title : List.of("Alpha", "Bravo", "Charlie")) {
+            String id = createPost(title, title + " body.").path("id").asText();
+            publish(id);
+        }
+
+        mockMvc.perform(get("/api/v1/blogs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].slug").value("charlie"))
+                .andExpect(jsonPath("$.data[1].slug").value("bravo"))
+                .andExpect(jsonPath("$.data[2].slug").value("alpha"));
+
+        mockMvc.perform(get("/api/v1/blogs?sort=title&direction=asc&size=2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].slug").value("alpha"))
+                .andExpect(jsonPath("$.data[1].slug").value("bravo"))
+                .andExpect(jsonPath("$.meta.page").value(0))
+                .andExpect(jsonPath("$.meta.size").value(2))
+                .andExpect(jsonPath("$.meta.totalElements").value(3))
+                .andExpect(jsonPath("$.meta.totalPages").value(2));
+
+        mockMvc.perform(get("/api/v1/blogs?sort=title&direction=asc&size=2&page=1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].slug").value("charlie"));
+
+        mockMvc.perform(get("/api/v1/blogs?sort=title&direction=asc&size=2&page=9"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0))
+                .andExpect(jsonPath("$.meta.totalElements").value(3));
+
+        mockMvc.perform(get("/api/v1/blogs?size=1000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.size").value(100));
+
+        mockMvc.perform(get("/api/v1/blogs?sort=password"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].errorCode").value("BAD_REQUEST"));
+
+        mockMvc.perform(get("/api/v1/blogs?direction=sideways"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].errorCode").value("BAD_REQUEST"));
+    }
 }
