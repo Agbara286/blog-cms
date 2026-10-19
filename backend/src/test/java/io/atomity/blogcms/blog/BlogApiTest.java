@@ -203,4 +203,40 @@ class BlogApiTest extends IntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].errorCode").value("BAD_REQUEST"));
     }
+
+    // ── Detail by slug ─────────────────────────────────────────────────────
+
+    @Test
+    void detailBySlugFollowsPublishingAndSlugChanges() throws Exception {
+        String id = createPost("Slug post", "Body text.").path("id").asText();
+
+        mockMvc.perform(get("/api/v1/blogs/slug/slug-post"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errors[0].errorCode").value("NOT_FOUND"));
+
+        publish(id);
+        mockMvc.perform(get("/api/v1/blogs/slug/slug-post"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(id));
+
+        // The editor renames the slug; only the new one resolves.
+        JsonNode current = data(call(get("/api/v1/posts/" + id)).andExpect(status().isOk()));
+        Map<String, Object> edit = postBody("Slug post", doc("Body text."));
+        edit.put("slug", "renamed-post");
+        edit.put("version", current.path("version").asLong());
+        call(put("/api/v1/posts/" + id), edit).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/blogs/slug/slug-post")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/blogs/slug/renamed-post"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(id));
+
+        unpublish(id);
+        mockMvc.perform(get("/api/v1/blogs/slug/renamed-post")).andExpect(status().isNotFound());
+
+        publish(id);
+        mockMvc.perform(get("/api/v1/blogs/slug/renamed-post")).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/blogs/slug/no-such-post")).andExpect(status().isNotFound());
+    }
 }
