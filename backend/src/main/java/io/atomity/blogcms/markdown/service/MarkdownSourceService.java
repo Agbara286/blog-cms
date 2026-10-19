@@ -110,6 +110,14 @@ public class MarkdownSourceService {
         if (name.isEmpty()) {
             name = "post.md";
         }
-        return name.length() > MAX_FILENAME_LENGTH ? name.substring(name.length() - MAX_FILENAME_LENGTH) : name;
+        if (name.length() <= MAX_FILENAME_LENGTH) {
+            return name;
+        }
+        // Keep the end (and the extension); never start on the second half of a two-unit character such as an emoji.
+        int start = name.length() - MAX_FILENAME_LENGTH;
+        if (Character.isLowSurrogate(name.charAt(start))) {
+            start++;
+        }
+        return name.substring(start);
     }
 }
