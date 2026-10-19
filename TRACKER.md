@@ -43,13 +43,13 @@ Not `PUBLISHED` (draft, archived, unpublished, unknown) → `404 NOT_FOUND`.
 | T01 | DONE | **[USER]** Start Docker Desktop (`docker info` must print a server version). Optional: `gh auth login`. Comment on issue #11 to claim it (README step 2). | – | no commit |
 | T02 | DONE | Git setup: `upstream` remote added + fetched (`main == upstream/main == c26cd04`), `core.hooksPath=.githooks`, branch `feat/public-blog-endpoints` created. | – | no commit |
 | T03 | DONE | Baseline: `cd backend && ./gradlew build` on the untouched branch. Record result + duration under Notes. If red, stop and report. | T01, T02 | no commit |
-| T04 | IN_PROGRESS | `TRACKER.md` + `CLAUDE.md` written (untracked). Remaining: `git add TRACKER.md CLAUDE.md`, commit, **first push**. Deviation: done before T03 because Docker is down; T03 result is added to this file later. | T02 | `docs: add agent tracker and workflow for issue #11` |
+| T04 | DONE | `TRACKER.md` + `CLAUDE.md` written (untracked). Remaining: `git add TRACKER.md CLAUDE.md`, commit, **first push**. Deviation: done before T03 because Docker is down; T03 result is added to this file later. | T02 | `docs: add agent tracker and workflow for issue #11` |
 
 ## Wave 2 — Implementation (T05–T11)
 
 | ID | Status | Task | Depends | Verify | Commit |
 |---|---|---|---|---|---|
-| T05 | TODO | `PostSummaryResponse`: change `authorRefs(Post)` and `tagRefs(Post)` from package-private to `public static`. Nothing else. | T03 | `./gradlew compileJava` | `refactor(backend): expose author/tag ref mapping for blog DTOs` |
+| T05 | DONE | `PostSummaryResponse`: change `authorRefs(Post)` and `tagRefs(Post)` from package-private to `public static`. Nothing else. | T03 | `./gradlew compileJava` | `refactor(backend): expose author/tag ref mapping for blog DTOs` |
 | T06 | TODO | `PostRepository`: add `Optional<Post> findByIdAndStatus(UUID id, PostStatus status);` and `Optional<Post> findBySlugAndStatus(String slug, PostStatus status);` (both must be used by `BlogService` — no dead methods). | T05 | compile | `feat(backend): look up published posts by id and slug` |
 | T07 | TODO | `blog/dto/BlogSummaryResponse` and `BlogResponse` records with `of(Post)`; reuse `PostSummaryResponse.authorRefs/tagRefs`, `MediaRef.of`. Javadoc says what is deliberately omitted. | T06 | compile | `feat(backend): add public blog response DTOs` |
 | T08 | TODO | `blog/dto/BlogListQuery(String sort, String direction, Integer page, Integer size)` with `toPageable()` = `new PostListQuery(PostStatus.PUBLISHED, null, null, null, sort == null ? "publishedAt" : sort, direction, page, size).toPageable()`. Plus `src/test/.../blog/BlogListQueryTest` (no Spring): default `publishedAt` DESC size 10; size clamp 1–100; negative page → 0; unknown sort and bad direction → `ApiException` `BAD_REQUEST`. | T07 | `./gradlew test --tests '*BlogListQueryTest'` | `feat(backend): add public blog list query` |
