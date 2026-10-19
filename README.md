@@ -34,7 +34,7 @@ Open-source CMS for writing, managing and publishing blog posts.
         backend (Spring Boot)
          ├─ CorrelationFilter  X-Correlation-ID on every request and log line
          ├─ Security           validates the JWT on every call
-         ├─ Controllers        /api/v1/{posts,authors,tags,media,auth}
+         ├─ Controllers        /api/v1/{posts,authors,tags,media,blogs,auth}
          └─ Services           business rules, slugs, content analysis
                   │
          ┌────────┴─────────┐
@@ -45,7 +45,8 @@ Open-source CMS for writing, managing and publishing blog posts.
 
 The browser never talks to the backend directly. The backend needs no CORS config, can
 stay on a private network, and answers every request with the same envelope:
-`{"data": ..., "meta": ..., "errors": [...]}`.
+`{"data": ..., "meta": ..., "errors": [...]}`. Published posts are also exposed
+read-only and without a token through the public blog API (`GET /api/v1/blogs…`).
 
 Full details — auth, API, business rules and code layout — are in
 [`docs/architecture.md`](docs/architecture.md).
