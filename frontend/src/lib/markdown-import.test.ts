@@ -47,6 +47,21 @@ describe("stripFrontMatter", () => {
     expect(stripFrontMatter("---\r\ntitle: Hello\r\n---\r\nBody")).toBe("Body");
   });
 
+  it("keeps going past an indented --- inside a block scalar", () => {
+    const markdown = "---\ntitle: Hello\ndescription: |\n  line one\n  ---\n  line two\n---\n# Body\n";
+    expect(stripFrontMatter(markdown)).toBe("# Body\n");
+  });
+
+  it("accepts ... as the closing line and an empty block", () => {
+    expect(stripFrontMatter("---\ntitle: Hello\n...\n# Body\n")).toBe("# Body\n");
+    expect(stripFrontMatter("---\n---\n# Body\n")).toBe("# Body\n");
+  });
+
+  it("leaves an unclosed block alone", () => {
+    const markdown = "---\ntitle: Hello\n# Body\n";
+    expect(stripFrontMatter(markdown)).toBe(markdown);
+  });
+
   it("leaves a horizontal rule in the middle of the post alone", () => {
     const markdown = "Intro\n\n---\n\nMore text\n\n---\n";
     expect(stripFrontMatter(markdown)).toBe(markdown);

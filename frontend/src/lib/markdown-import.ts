@@ -7,7 +7,8 @@ export const MARKDOWN_MAX_BYTES = 1024 * 1024;
 const MIN_HEADING_LEVEL = 2;
 const MAX_HEADING_LEVEL = 3;
 
-const FRONT_MATTER = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
+// Ends at the first unindented "---" or "..." line, like YAML itself; indented ones inside a block scalar are content.
+const FRONT_MATTER = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
 
 /** Returns an error message for the user, or null if the file is OK. */
 export function validateMarkdownFile(file: File): string | null {
