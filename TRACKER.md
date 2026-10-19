@@ -17,7 +17,8 @@
 
 - Branch `feat/public-blog-endpoints` exists locally; `upstream` remote added; `core.hooksPath=.githooks` set (T02).
 - Docker Desktop is **running** (`docker info` → server 29.4.1). T01 done, T03 baseline green.
-- Nothing committed or pushed yet. `TRACKER.md` + `CLAUDE.md` are written but untracked (T04 = commit + first push). `PLAN.md` stays untracked (local only, never enters the PR diff).
+- Waves 1–4 done and pushed: T04–T23 committed (commit per task), `*BlogApiTest` green, live curl verification passed (see Notes). T19 skipped on purpose; T18 done.
+- `PLAN.md` stays untracked (local only, never enters the PR diff).
 - Competing work seen upstream: PR #16 (also implements #11; maintainer asked for newest-first and no unused repo methods),
   PR #14/#18 (issue #10, #18 adds `V2__markdown_sources.sql`), PR #17 (re-implements existing `GET /posts`).
 
@@ -85,7 +86,7 @@ Public calls: `mockMvc.perform(get(...))` (no token). Fixtures: create/publish t
 
 | ID | Status | Task | Depends | Commit |
 |---|---|---|---|---|
-| T23 | TODO | Full verification: `./gradlew build` green; run stack (`docker compose up -d postgres` + backend `local` profile with dummy `NEXTCLOUD_*`); publish a post via the admin API; run the curl script below; paste real outputs under Notes. | T22 | `docs(tracker): record verification results` |
+| T23 | DONE | Full verification: `./gradlew build` green; run stack (`docker compose up -d postgres` + backend `local` profile with dummy `NEXTCLOUD_*`); publish a post via the admin API; run the curl script below; paste real outputs under Notes. | T22 | `docs(tracker): record verification results` |
 | T24 | TODO | Self-review `git diff upstream/main...HEAD` (use `/code-review`); walk `.github/pull_request_template.md` checklist; fix findings, one commit each. | T23 | `fix(backend): …` per finding |
 | T25 | TODO | `git fetch upstream`; if `main` moved, **merge** `upstream/main` into the branch (no force-push), rerun `./gradlew build`. | T24 | `chore: merge upstream main` (only if needed) |
 | T26 | TODO | Draft PR title + body in the appendix below (template sections, `Closes #11`, how to test, honest checklist, design notes incl. "no migration" rationale and out-of-scope list). | T25 | `docs(tracker): draft PR description` |
@@ -119,18 +120,30 @@ curl -si localhost:8080/api/v1/posts                 # 401 — admin API still p
 | 2026-10-19 | Delegate to `PostListQuery.toPageable()` | Reuse sort whitelist / size clamp / tiebreaker instead of duplicating |
 | 2026-10-19 | `TRACKER.md` + `CLAUDE.md` committed, removed in T27 | Durable for any agent/machine; clean upstream PR diff |
 | 2026-10-19 | T04 done before T03 | Docker was down; baseline result is recorded when T03 runs |
+| 2026-10-19 | T19 (ETag revalidation) skipped | Stretch task, default SKIP; revalidation caching is a follow-up, not part of this PR |
+| 2026-10-19 | T23 ran compose Postgres on `POSTGRES_PORT=55432` | This machine has a native PostgreSQL 18 service on 5432/5433; env-only workaround, no repo change |
 
 ## Out of scope
 Issue #10 / Markdown import · frontend changes · tag/author/`q` filters on public endpoints (unauthenticated search is an expensive surface) ·
 rate limiting · CORS · OpenAPI · new migration/index · new env vars · the stale "local-disk" wording in `docs/architecture.md`.
 
 ## Blockers
-- Docker Desktop not running (needed for `./gradlew build`, Testcontainers and the pre-commit hook on backend files) — **user action (T01)**.
+- ~~Docker Desktop not running~~ — resolved (T01).
 - `gh` not authenticated — only needed to open the PR from the CLI; browser works.
+- Local machine: a native PostgreSQL 18 Windows service holds host ports 5432/5433; run the compose Postgres on another port (e.g. `POSTGRES_PORT=55432`) for manual testing (T23).
 
 ## Notes (agents append real results here)
 - _T01:_ Docker Desktop started; `docker info` returns server `29.4.1`. Issue #11 not claimed (outward-facing, needs user approval); `gh` not authenticated.
 - _T03 baseline:_ `cd backend && .\gradlew.bat build --console=plain` → **BUILD SUCCESSFUL in 3m 50s** (230s, includes first-time Gradle 8.11.1 download). 10 test suites, **68 tests, 0 failures, 0 errors, 0 skipped**. Docker running, Testcontainers Postgres used.
+- _T05–T18:_ every commit ran the pre-commit hook (`./gradlew build`, compile + all tests, Testcontainers Postgres) and passed; each was pushed. `*BlogApiTest` (10 tests) and `*BlogQueryCountTest` (1 test) ran green on every invocation; T11 also ran the full suite green.
+- _T23 full verification (2026-10-19, live stack):_ `cd backend && .\gradlew.bat build` → BUILD SUCCESSFUL (7 tasks up-to-date). Environment deviation: host ports 5432/5433 are taken by a native PostgreSQL 18 Windows service, so Postgres was published on `POSTGRES_PORT=55432` (env only, no repo change). `docker compose up -d postgres` → healthy; backend with `SPRING_PROFILES_ACTIVE=local` + dummy `NEXTCLOUD_*` → Flyway applied `V1` on an empty schema, started in 8.6s, `/health/readiness` 200.
+  Real curl results (post published + a separate draft, no token sent on the blog calls):
+  - `GET /api/v1/blogs?size=2` → **200**, only the published post; `meta {page:0,size:2,totalElements:1,totalPages:1}`; item has `id,title,slug,excerpt,featured,authors,tags,coverImage,wordCount,readingTimeMinutes,publishedAt,updatedAt` and no `status/version/createdAt/focusKeyword`.
+  - `GET /api/v1/blogs/32273ddc-774b-45cc-b86a-901143434199` → **200**, full Tiptap `content`, `seoTitle`/`metaDescription` present, editor-only fields absent.
+  - `GET /api/v1/blogs/slug/verify-1792424423` → **200**, same body as by id.
+  - `GET /api/v1/blogs/34c0653f-0019-4303-a0fe-0c3069a01972` (draft) → **404** `{"errors":[{"errorCode":"NOT_FOUND","message":"Blog not found","correlationId":"…"}]}`.
+  - `GET /api/v1/posts` (no token) → **401** `UNAUTHORIZED`, admin API still protected.
+  Stack torn down afterwards (`docker compose down -v`).
 
 ## Appendix — PR description draft (filled in T26)
 _empty_
