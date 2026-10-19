@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -137,6 +138,68 @@ class BlogApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.errors[0].errorCode").value("BAD_REQUEST"));
 
         mockMvc.perform(get("/api/v1/blogs?direction=sideways"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].errorCode").value("BAD_REQUEST"));
+    }
+
+    // ── Detail by id ───────────────────────────────────────────────────────
+
+    @Test
+    void detailByIdReturnsTheFullPublishedPost() throws Exception {
+        String author = createAuthor("Lena");
+        String tag = createTag("FinOps");
+        JsonNode cover = uploadImage("cover.png");
+
+        Map<String, Object> body = postBody("Detailed post", doc("Hello from the body."));
+        body.put("authorIds", List.of(author));
+        body.put("tagIds", List.of(tag));
+        body.put("coverImageId", cover.path("id").asText());
+        body.put("coverImageAlt", "A cover");
+        body.put("seoTitle", "SEO title");
+        body.put("metaDescription", "Meta description");
+        body.put("canonicalUrl", "https://example.com/detailed");
+        body.put("featured", true);
+        String id = data(call(post("/api/v1/posts"), body).andExpect(status().isCreated())).path("id").asText();
+        publish(id);
+
+        // No token on purpose: published posts are public.
+        mockMvc.perform(get("/api/v1/blogs/" + id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(id))
+                .andExpect(jsonPath("$.data.title").value("Detailed post"))
+                .andExpect(jsonPath("$.data.content.type").value("doc"))
+                .andExpect(jsonPath("$.data.content.content[0].content[0].text").value("Hello from the body."))
+                .andExpect(jsonPath("$.data.authors[0].name").value("Lena"))
+                .andExpect(jsonPath("$.data.tags[0].slug").value("finops"))
+                .andExpect(jsonPath("$.data.coverImage.id").value(cover.path("id").asText()))
+                .andExpect(jsonPath("$.data.coverImage.url").value(cover.path("url").asText()))
+                .andExpect(jsonPath("$.data.coverImageAlt").value("A cover"))
+                .andExpect(jsonPath("$.data.seoTitle").value("SEO title"))
+                .andExpect(jsonPath("$.data.metaDescription").value("Meta description"))
+                .andExpect(jsonPath("$.data.canonicalUrl").value("https://example.com/detailed"))
+                .andExpect(jsonPath("$.data.featured").value(true));
+    }
+
+    @Test
+    void detailByIdHidesEverythingThatIsNotPublished() throws Exception {
+        String draft = createPost("Draft post", "Draft body.").path("id").asText();
+
+        String archived = createPost("Archived post", "Archived body.").path("id").asText();
+        publish(archived);
+        archive(archived);
+
+        String unpublished = createPost("Unpublished post", "Unpublished body.").path("id").asText();
+        publish(unpublished);
+        unpublish(unpublished);
+
+        for (String id : List.of(draft, archived, unpublished, UUID.randomUUID().toString())) {
+            mockMvc.perform(get("/api/v1/blogs/" + id))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.errors[0].errorCode").value("NOT_FOUND"))
+                    .andExpect(jsonPath("$.errors[0].message").value("Blog not found"));
+        }
+
+        mockMvc.perform(get("/api/v1/blogs/not-a-uuid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].errorCode").value("BAD_REQUEST"));
     }
