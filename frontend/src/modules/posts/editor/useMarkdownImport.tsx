@@ -16,18 +16,29 @@ interface ParsedImport {
 }
 
 /** Replaces the post body with an imported .md file (asks first if the post isn't empty). */
-export function useMarkdownImport(editor: Editor | null, onSourceChange: (source: MarkdownSourceRef) => void) {
+export function useMarkdownImport(
+  editor: Editor | null,
+  onSourceChange: (source: MarkdownSourceRef) => void,
+  onImportingChange: (importing: boolean) => void,
+) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<ParsedImport | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const setImporting = (importing: boolean) => {
+    setUploading(importing);
+    onImportingChange(importing);
+  };
+
   // The original file is stored first, so a failed upload leaves the post as it was.
   const apply = async ({ file, doc }: ParsedImport) => {
     if (!editor) return;
-    setUploading(true);
+    setImporting(true);
     try {
       const source = await uploadMarkdownSource(file);
+      // The page can still be left from outside the guarded links (e.g. the browser's back button).
+      if (editor.isDestroyed) return;
       editor.chain().focus().setContent(doc).run();
       onSourceChange(source);
       toast.success(`Imported "${file.name}".`);
@@ -35,7 +46,7 @@ export function useMarkdownImport(editor: Editor | null, onSourceChange: (source
       toast.error(error instanceof Error ? error.message : `Couldn't upload "${file.name}".`);
       throw error;
     } finally {
-      setUploading(false);
+      setImporting(false);
     }
   };
 

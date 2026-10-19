@@ -67,14 +67,16 @@ function PostEditor({ initial }: { initial: Post | null }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // The slug follows the title until someone edits it by hand — except on posts that
   // already have their own slug, where changing the title must not move the URL.
   const slugFollowsTitle = useRef(!initial || (initial.status === "DRAFT" && initial.slug === slugify(initial.title)));
 
   const dirty = JSON.stringify(form) !== savedSnapshot;
-  useUnsavedChangesWarning(dirty);
-  useBlockNavigation(dirty);
+  // A Markdown import still uploading counts as unsaved: leaving now would lose it.
+  useUnsavedChangesWarning(dirty || importing);
+  useBlockNavigation(dirty || importing);
   const guardedNavigate = useGuardedNavigate();
 
   const errors = useMemo(() => validateForm(form), [form]);
@@ -291,6 +293,7 @@ function PostEditor({ initial }: { initial: Post | null }) {
             onChange={onContentChange}
             markdownSource={form.markdownSource}
             onMarkdownSourceChange={onMarkdownSourceChange}
+            onImportingChange={setImporting}
           />
         </div>
 

@@ -57,13 +57,21 @@ export interface RichTextEditorProps {
   onChange: (doc: ContentDoc) => void;
   markdownSource: MarkdownSourceRef | null;
   onMarkdownSourceChange: (source: MarkdownSourceRef | null) => void;
+  /** True while an imported file is uploading, so the page can block navigation. */
+  onImportingChange: (importing: boolean) => void;
 }
 
 /**
  * The post body editor. Content goes in and out as Tiptap JSON — the format the
  * backend stores — never HTML.
  */
-export function RichTextEditor({ value, onChange, markdownSource, onMarkdownSourceChange }: RichTextEditorProps) {
+export function RichTextEditor({
+  value,
+  onChange,
+  markdownSource,
+  onMarkdownSourceChange,
+  onImportingChange,
+}: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -83,7 +91,7 @@ export function RichTextEditor({ value, onChange, markdownSource, onMarkdownSour
       attributes: { class: "post-content", "aria-label": "Post content", "aria-multiline": "true", role: "textbox" },
     },
   });
-  const markdownImport = useMarkdownImport(editor, onMarkdownSourceChange);
+  const markdownImport = useMarkdownImport(editor, onMarkdownSourceChange, onImportingChange);
 
   return (
     <>
