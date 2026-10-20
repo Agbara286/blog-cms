@@ -2,10 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import { Placeholder } from "@tiptap/extensions";
-import { Markdown } from "@tiptap/markdown";
 import {
   Bold,
   Code,
@@ -31,26 +27,9 @@ import { cn } from "@/lib/utils";
 import { MediaPickerModal } from "@/modules/media/MediaPickerModal";
 import type { ContentDoc } from "@/types/content";
 import type { MarkdownSourceRef } from "@/types/markdown";
+import { editorExtensions } from "./extensions";
 import { MarkdownSourceBar } from "./MarkdownSourceBar";
 import { useMarkdownImport } from "./useMarkdownImport";
-
-/**
- * Image node that also remembers which media-library item it came from
- * (`attrs.mediaId`), so the backend can tell which images a post uses — e.g. to
- * stop one being deleted from the library while it's still in a post.
- */
-const BlogImage = Image.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      mediaId: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("data-media-id"),
-        renderHTML: (attributes) => (attributes.mediaId ? { "data-media-id": attributes.mediaId } : {}),
-      },
-    };
-  },
-}).configure({ allowBase64: true });
 
 export interface RichTextEditorProps {
   value: ContentDoc;
@@ -73,16 +52,7 @@ export function RichTextEditor({
   onImportingChange,
 }: RichTextEditorProps) {
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [2, 3] },
-        link: { openOnClick: false, autolink: true, defaultProtocol: "https" },
-      }),
-      BlogImage,
-      Placeholder.configure({ placeholder: "Start writing your post…" }),
-      // For parsing imported .md files only; posts are still saved as JSON.
-      Markdown,
-    ],
+    extensions: editorExtensions,
     content: value,
     // Rendered on the client only; skipping the server pass avoids a hydration mismatch.
     immediatelyRender: false,
