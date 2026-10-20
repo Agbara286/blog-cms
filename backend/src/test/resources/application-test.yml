@@ -7,4 +7,8 @@ blogcms:
     secret: test-secret-test-secret-test-secret-0123456789
     ttl: 1h
   media:
-    storage-path: ./build/test-media
+    nextcloud:
+      url: http://localhost:9999
+      username: test-user
+      password: test-password
+      remote-directory: /BlogCMS

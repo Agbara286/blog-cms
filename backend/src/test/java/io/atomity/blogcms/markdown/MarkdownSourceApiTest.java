@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.atomity.blogcms.IntegrationTest;
 import io.atomity.blogcms.markdown.repository.MarkdownSourceRepository;
 import io.atomity.blogcms.media.storage.StorageService;
+import io.atomity.blogcms.shared.ApiException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
@@ -122,7 +123,7 @@ class MarkdownSourceApiTest extends IntegrationTest {
         replace.put("version", post.path("version").asLong());
         post = data(call(put("/api/v1/posts/" + postId), replace).andExpect(status().isOk()));
         call(get("/api/v1/markdown-sources/" + first + "/file")).andExpect(status().isNotFound());
-        assertThatThrownBy(() -> storage.load(firstKey)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> storage.load(firstKey)).isInstanceOf(ApiException.class);
 
         // Remove: same for the second one.
         Map<String, Object> remove = postBody("Imported", null);

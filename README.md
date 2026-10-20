@@ -40,7 +40,7 @@ Open-source CMS for writing, managing and publishing blog posts.
          ┌────────┴─────────┐
          ▼                  ▼
     PostgreSQL         Media storage
-   (Flyway schema)    (local disk, MEDIA_STORAGE_PATH)
+   (Flyway schema)    (Nextcloud via WebDAV)
 ```
 
 The browser never talks to the backend directly. The backend needs no CORS config, can
@@ -132,19 +132,25 @@ Each app is self-contained: it builds, tests and ships on its own, with its own 
 
 Requires Docker with Compose v2.
 
-```bash
-cp .env.example .env
-make up            # or: docker compose up --build
-```
+Copy the example environment file:
 
-| Service  | URL                                       |
-|----------|-------------------------------------------|
-| Frontend | http://localhost:3000                     |
-| Backend  | http://localhost:8080/health/readiness    |
+    cp .env.example .env
+
+Before starting the stack, edit `.env` and configure `NEXTCLOUD_URL`, `NEXTCLOUD_USERNAME`, and `NEXTCLOUD_PASSWORD` with valid Nextcloud credentials. Use a dedicated Nextcloud app password where supported. Set `NEXTCLOUD_REMOTE_DIRECTORY` to the remote upload directory if you want something other than `/BlogCMS`. The values in `.env.example` are placeholders and will not connect to a real instance.
+
+Start the stack:
+
+    make up
+
+Alternatively, run `docker compose up --build`.
+
+| Service  | URL                                    |
+|----------|----------------------------------------|
+| Frontend | http://localhost:3000                  |
+| Backend  | http://localhost:8080/health/readiness |
 | Postgres | `localhost:5432` (credentials from `.env`) |
 
-With the defaults from `.env.example` you sign in as **admin@example.com / admin** — change
-`ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` and `JWT_SECRET` before exposing it anywhere.
+With the defaults from `.env.example` you sign in as **admin@example.com / admin**. Change `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, and `JWT_SECRET` before exposing it anywhere.
 
 ## Local development
 
@@ -177,7 +183,10 @@ make install && make frontend             # Next.js on :3000 (also enables the g
 | `ADMIN_PASSWORD_HASH`        | backend  | bcrypt hash of the admin password (see below) |
 | `JWT_SECRET`                 | backend  | Session-token signing key, ≥ 32 characters   |
 | `JWT_TTL`                    | backend  | Session length (default `8h`)                |
-| `MEDIA_STORAGE_PATH`         | backend  | Directory for uploaded images (default `./data/media`) |
+| `NEXTCLOUD_URL`               | backend  | Base URL of the Nextcloud instance; use HTTPS in production |
+| `NEXTCLOUD_USERNAME`          | backend  | Nextcloud account used for media storage |
+| `NEXTCLOUD_PASSWORD`          | backend  | Nextcloud app password; keep it secret |
+| `NEXTCLOUD_REMOTE_DIRECTORY`  | backend  | Remote directory for uploads (default `/BlogCMS`) |
 | `SERVER_PORT`                | backend  | HTTP port (default `8080`)                   |
 | `BACKEND_API_URL`            | frontend | Backend base URL, used server-side only      |
 | `SESSION_COOKIE_SECURE`      | frontend | `false` to allow sign-in over plain HTTP on a host other than localhost (default: on in production) |

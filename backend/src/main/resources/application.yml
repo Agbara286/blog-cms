@@ -53,7 +53,11 @@ blogcms:
     secret: ${JWT_SECRET}
     ttl: ${JWT_TTL:8h}
   media:
-    storage-path: ${MEDIA_STORAGE_PATH:./data/media}
+    nextcloud:
+      url: ${NEXTCLOUD_URL}
+      username: ${NEXTCLOUD_USERNAME}
+      password: ${NEXTCLOUD_PASSWORD}
+      remote-directory: ${NEXTCLOUD_REMOTE_DIRECTORY:/BlogCMS}
 
 management:
   endpoints:
