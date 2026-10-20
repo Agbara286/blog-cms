@@ -109,6 +109,11 @@ function PostEditor({ initial }: { initial: Post | null }) {
 
   /** Saves the form; resolves to the saved post, or null if it couldn't be saved. */
   const save = async (options: { quiet?: boolean } = {}): Promise<Post | null> => {
+    // Saving now would store the post without the file that is still uploading.
+    if (importing) {
+      toast.info("Wait for the Markdown import to finish.");
+      return null;
+    }
     if (hasErrors) {
       setShowErrors(true);
       toast.error("Fix the highlighted fields before saving.");
@@ -195,6 +200,8 @@ function PostEditor({ initial }: { initial: Post | null }) {
     ...(post ? ["separator" as const, { label: "Delete", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(true) }] : []),
   ];
 
+  // Header actions wait for both a running request and an import that is still uploading.
+  const locked = busy !== null || importing;
   const saveState = busy === "save" ? "Saving…" : dirty ? "Unsaved changes" : post ? `Saved ${timeAgo(post.updatedAt)}` : "Not saved yet";
 
   return (
@@ -212,13 +219,13 @@ function PostEditor({ initial }: { initial: Post | null }) {
 
         <div className="ml-auto flex items-center gap-2">
           {status === "PUBLISHED" ? (
-            <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={busy !== null || (!dirty && Boolean(post))}>
+            <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={locked || (!dirty && Boolean(post))}>
               {busy === "save" && <Spinner size={12} />}
               Update
             </button>
           ) : (
             <>
-              <button type="button" className="btn btn-secondary" onClick={() => void save()} disabled={busy !== null || (!dirty && Boolean(post))}>
+              <button type="button" className="btn btn-secondary" onClick={() => void save()} disabled={locked || (!dirty && Boolean(post))}>
                 {busy === "save" && <Spinner size={12} />}
                 {status === "ARCHIVED" ? "Save" : "Save draft"}
               </button>
@@ -226,7 +233,7 @@ function PostEditor({ initial }: { initial: Post | null }) {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy !== null}
+                  disabled={locked}
                   onClick={() => void changeStatus(unpublishPost, "Restored to drafts.", "status")}
                 >
                   {busy === "status" ? <Spinner size={12} /> : <Undo2 size={13} aria-hidden />}
@@ -236,7 +243,7 @@ function PostEditor({ initial }: { initial: Post | null }) {
                 <button
                   type="button"
                   className="btn btn-green"
-                  disabled={busy !== null}
+                  disabled={locked}
                   onClick={() => void changeStatus(publishPost, "Post published.", "publish")}
                 >
                   {busy === "publish" ? <Spinner size={12} /> : <Send size={13} aria-hidden />}
