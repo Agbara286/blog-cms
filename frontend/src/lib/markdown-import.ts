@@ -27,16 +27,23 @@ export function validateMarkdownFile(file: File): string | null {
 
 /** Reads the file and returns the post body, without BOM and front matter. */
 export async function readMarkdownFile(file: File): Promise<string> {
-  let text: string;
+  let bytes: ArrayBuffer;
   try {
-    text = await file.text();
+    bytes = await file.arrayBuffer();
   } catch {
     throw new Error(`Couldn't read "${file.name}". Try choosing the file again.`);
   }
-  // Real text never contains NUL, so this is a binary file renamed to .md.
+  // Same rule as the backend: valid UTF-8 without NUL, otherwise it's a binary file renamed to .md.
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(`"${file.name}" doesn't look like a text file.`);
+  }
   if (text.includes("\0")) throw new Error(`"${file.name}" doesn't look like a text file.`);
 
-  const body = stripFrontMatter(text.replace(/^\uFEFF/, ""));
+  // TextDecoder already drops a leading byte-order mark.
+  const body = stripFrontMatter(text);
   if (!body.trim()) throw new Error(`"${file.name}" has no content to import.`);
   return body;
 }

@@ -73,6 +73,11 @@ describe("readMarkdownFile", () => {
     await expect(readMarkdownFile(mdFile("\uFEFF---\ntitle: x\n---\nHello"))).resolves.toBe("Hello");
   });
 
+  it("rejects bytes that aren't valid UTF-8, like the backend does", async () => {
+    const latin1 = new File([new Uint8Array([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9])], "cafe.md", { type: "text/markdown" });
+    await expect(readMarkdownFile(latin1)).rejects.toThrow(/doesn't look like a text file/);
+  });
+
   it("rejects binary content", async () => {
     await expect(readMarkdownFile(mdFile("abc\0def"))).rejects.toThrow(/doesn't look like a text file/);
   });
