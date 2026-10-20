@@ -4,6 +4,7 @@ import io.atomity.blogcms.author.entity.Author;
 import io.atomity.blogcms.author.repository.AuthorRepository;
 import io.atomity.blogcms.markdown.entity.MarkdownSource;
 import io.atomity.blogcms.markdown.repository.MarkdownSourceRepository;
+import io.atomity.blogcms.markdown.service.MarkdownSourceService;
 import io.atomity.blogcms.media.entity.Media;
 import io.atomity.blogcms.media.repository.MediaRepository;
 import io.atomity.blogcms.post.dto.PostListQuery;
@@ -48,15 +49,17 @@ public class PostService {
     private final TagRepository tagRepository;
     private final MediaRepository mediaRepository;
     private final MarkdownSourceRepository markdownSourceRepository;
+    private final MarkdownSourceService markdownSourceService;
 
     public PostService(PostRepository postRepository, AuthorRepository authorRepository,
                        TagRepository tagRepository, MediaRepository mediaRepository,
-                       MarkdownSourceRepository markdownSourceRepository) {
+                       MarkdownSourceRepository markdownSourceRepository, MarkdownSourceService markdownSourceService) {
         this.postRepository = postRepository;
         this.authorRepository = authorRepository;
         this.tagRepository = tagRepository;
         this.mediaRepository = mediaRepository;
         this.markdownSourceRepository = markdownSourceRepository;
+        this.markdownSourceService = markdownSourceService;
     }
 
     @Transactional(readOnly = true)
@@ -108,9 +111,16 @@ public class PostService {
             throw ApiException.conflict("VERSION_CONFLICT",
                     "This post was changed somewhere else since you opened it. Reload to get the latest version.");
         }
+        MarkdownSource previousSource = post.getMarkdownSource();
         post.edit(resolveEdit(request, id));
         // Flush so the response carries the incremented version.
-        return PostResponse.of(postRepository.saveAndFlush(post));
+        PostResponse response = PostResponse.of(postRepository.saveAndFlush(post));
+        // A replaced or removed .md file is deleted once nothing else uses it.
+        MarkdownSource currentSource = post.getMarkdownSource();
+        if (previousSource != null && (currentSource == null || !previousSource.getId().equals(currentSource.getId()))) {
+            markdownSourceService.deleteIfUnused(previousSource);
+        }
+        return response;
     }
 
     /** Publishing needs a title and something to read. */
@@ -160,7 +170,11 @@ public class PostService {
 
     @Transactional
     public void delete(UUID id) {
-        postRepository.delete(find(id));
+        Post post = find(id);
+        MarkdownSource source = post.getMarkdownSource();
+        postRepository.delete(post);
+        postRepository.flush();
+        markdownSourceService.deleteIfUnused(source);
     }
 
     private Post find(UUID id) {

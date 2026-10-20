@@ -5,6 +5,7 @@ import io.atomity.blogcms.media.entity.Media;
 import io.atomity.blogcms.media.repository.MediaRepository;
 import io.atomity.blogcms.media.storage.StorageService;
 import io.atomity.blogcms.shared.ApiException;
+import io.atomity.blogcms.shared.Filenames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -29,7 +30,6 @@ public class MediaService {
 
     /** Mirrors spring.servlet.multipart.max-file-size; checked here too so the message is precise. */
     static final long MAX_BYTES = 10L * 1024 * 1024;
-    private static final int MAX_FILENAME_LENGTH = 255;
 
     private final MediaRepository mediaRepository;
     private final StorageService storage;
@@ -89,7 +89,7 @@ public class MediaService {
             }
         });
 
-        Media media = mediaRepository.save(Media.create(id, key, cleanFilename(file.getOriginalFilename(), info.extension()),
+        Media media = mediaRepository.save(Media.create(id, key, Filenames.clean(file.getOriginalFilename(), "image." + info.extension()),
                 info.contentType(), bytes.length, info.width(), info.height()));
         log.info("Stored image {} ({} bytes, {}x{})", media.getId(), bytes.length, info.width(), info.height());
         return MediaResponse.of(media, 0);
@@ -119,15 +119,5 @@ public class MediaService {
                 storage.delete(key);
             }
         });
-    }
-
-    /** Keeps only the base name (no client paths), bounded in length. */
-    static String cleanFilename(String original, String extension) {
-        String name = original == null ? "" : original.replace('\\', '/');
-        name = name.substring(name.lastIndexOf('/') + 1).replaceAll("[\\p{Cntrl}]", "").strip();
-        if (name.isEmpty()) {
-            name = "image." + extension;
-        }
-        return name.length() > MAX_FILENAME_LENGTH ? name.substring(name.length() - MAX_FILENAME_LENGTH) : name;
     }
 }

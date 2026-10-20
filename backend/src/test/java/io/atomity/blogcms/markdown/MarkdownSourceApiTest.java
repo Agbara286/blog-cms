@@ -2,15 +2,21 @@ package io.atomity.blogcms.markdown;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.atomity.blogcms.IntegrationTest;
+import io.atomity.blogcms.markdown.repository.MarkdownSourceRepository;
+import io.atomity.blogcms.media.storage.StorageService;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,6 +29,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MarkdownSourceApiTest extends IntegrationTest {
 
     private static final byte[] MARKDOWN = "# Hello\n\nSome **bold** text.\n".getBytes(StandardCharsets.UTF_8);
+
+    @Autowired
+    private MarkdownSourceRepository repository;
+
+    @Autowired
+    private StorageService storage;
 
     private static MockMultipartFile file(String name, byte[] bytes) {
         return new MockMultipartFile("file", name, "text/markdown", bytes);
@@ -95,6 +107,49 @@ class MarkdownSourceApiTest extends IntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.markdownSource").isEmpty())
                 .andExpect(jsonPath("$.data.wordCount").value(1));
+    }
+
+    @Test
+    void replacedRemovedAndDeletedSourcesAreCleanedUp() throws Exception {
+        String first = upload("first.md", MARKDOWN).path("id").asText();
+        String firstKey = repository.findById(UUID.fromString(first)).orElseThrow().getStorageKey();
+        JsonNode post = data(call(post("/api/v1/posts"), postBody("Imported", first)).andExpect(status().isCreated()));
+        String postId = post.path("id").asText();
+
+        // Replace: the old row and file go.
+        String second = upload("second.md", MARKDOWN).path("id").asText();
+        Map<String, Object> replace = postBody("Imported", second);
+        replace.put("version", post.path("version").asLong());
+        post = data(call(put("/api/v1/posts/" + postId), replace).andExpect(status().isOk()));
+        call(get("/api/v1/markdown-sources/" + first + "/file")).andExpect(status().isNotFound());
+        assertThatThrownBy(() -> storage.load(firstKey)).isInstanceOf(IllegalStateException.class);
+
+        // Remove: same for the second one.
+        Map<String, Object> remove = postBody("Imported", null);
+        remove.put("version", post.path("version").asLong());
+        call(put("/api/v1/posts/" + postId), remove).andExpect(status().isOk());
+        call(get("/api/v1/markdown-sources/" + second + "/file")).andExpect(status().isNotFound());
+
+        // Delete the post: its source goes with it.
+        String third = upload("third.md", MARKDOWN).path("id").asText();
+        String otherId = data(call(post("/api/v1/posts"), postBody("Other", third)).andExpect(status().isCreated()))
+                .path("id").asText();
+        call(delete("/api/v1/posts/" + otherId)).andExpect(status().isNoContent());
+        call(get("/api/v1/markdown-sources/" + third + "/file")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void sourceSharedWithADuplicateIsKeptUntilTheLastPostLetsGo() throws Exception {
+        String sourceId = upload("shared.md", MARKDOWN).path("id").asText();
+        JsonNode original = data(call(post("/api/v1/posts"), postBody("Original", sourceId)).andExpect(status().isCreated()));
+        String copyId = data(call(post("/api/v1/posts/" + original.path("id").asText() + "/duplicate"))
+                .andExpect(status().isCreated())).path("id").asText();
+
+        call(delete("/api/v1/posts/" + original.path("id").asText())).andExpect(status().isNoContent());
+        call(get("/api/v1/markdown-sources/" + sourceId + "/file")).andExpect(status().isOk());
+
+        call(delete("/api/v1/posts/" + copyId)).andExpect(status().isNoContent());
+        call(get("/api/v1/markdown-sources/" + sourceId + "/file")).andExpect(status().isNotFound());
     }
 
     @Test

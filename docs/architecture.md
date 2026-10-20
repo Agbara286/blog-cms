@@ -68,8 +68,9 @@ All under `/api/v1`, JSON in camelCase, wrapped in the response envelope.
   client's file name or Content-Type. An image used as a cover, inline, or as an avatar
   can't be deleted.
 - An imported `.md` file (`.md`/`.markdown`, UTF-8 text, ≤ 1 MB) is stored as is and linked to
-  its post through `markdownSourceId`, so the editor can show it again after a reload. Saving
-  without it removes the link; the post content stays.
+  its post through `markdownSourceId`, so the editor can show it again after a reload. Replacing
+  or removing it, or deleting the post, deletes the file once no post uses it (a duplicate shares
+  it); the post content stays.
 - Deleting an author or tag removes it from posts; the posts stay.
 
 ## Backend layout

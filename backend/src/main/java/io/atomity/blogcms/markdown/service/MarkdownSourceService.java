@@ -5,6 +5,7 @@ import io.atomity.blogcms.markdown.entity.MarkdownSource;
 import io.atomity.blogcms.markdown.repository.MarkdownSourceRepository;
 import io.atomity.blogcms.media.storage.StorageService;
 import io.atomity.blogcms.shared.ApiException;
+import io.atomity.blogcms.shared.Filenames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -31,7 +32,6 @@ public class MarkdownSourceService {
 
     /** Same limit as the editor's import. */
     static final long MAX_BYTES = 1024 * 1024;
-    private static final int MAX_FILENAME_LENGTH = 255;
 
     private final MarkdownSourceRepository repository;
     private final StorageService storage;
@@ -46,10 +46,29 @@ public class MarkdownSourceService {
         return repository.findById(id).orElseThrow(() -> ApiException.notFound("Markdown file"));
     }
 
+    /**
+     * Deletes the row and, once that commits, the stored file, as long as no post still
+     * uses it (a duplicated post shares its source). Call after the post change is flushed.
+     */
+    @Transactional
+    public void deleteIfUnused(MarkdownSource source) {
+        if (source == null || repository.countUsages(source.getId()) > 0) {
+            return;
+        }
+        repository.delete(source);
+        String key = source.getStorageKey();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                storage.delete(key);
+            }
+        });
+    }
+
     /** Stores the file, then records it. The file is removed again if the database write fails. */
     @Transactional
     public MarkdownSourceRef upload(MultipartFile file) {
-        String name = cleanFilename(file.getOriginalFilename());
+        String name = Filenames.clean(file.getOriginalFilename(), "post.md");
         String lower = name.toLowerCase(Locale.ROOT);
         if (!lower.endsWith(".md") && !lower.endsWith(".markdown")) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_TYPE", "Only .md and .markdown files are supported");
@@ -101,23 +120,5 @@ public class MarkdownSourceService {
         } catch (CharacterCodingException e) {
             return false;
         }
-    }
-
-    /** Keeps only the base name (no client paths), bounded in length. */
-    static String cleanFilename(String original) {
-        String name = original == null ? "" : original.replace('\\', '/');
-        name = name.substring(name.lastIndexOf('/') + 1).replaceAll("[\\p{Cntrl}]", "").strip();
-        if (name.isEmpty()) {
-            name = "post.md";
-        }
-        if (name.length() <= MAX_FILENAME_LENGTH) {
-            return name;
-        }
-        // Keep the end (and the extension); never start on the second half of a two-unit character such as an emoji.
-        int start = name.length() - MAX_FILENAME_LENGTH;
-        if (Character.isLowSurrogate(name.charAt(start))) {
-            start++;
-        }
-        return name.substring(start);
     }
 }
