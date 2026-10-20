@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import { Placeholder } from "@tiptap/extensions";
 import {
   Bold,
   Code,
@@ -29,44 +26,33 @@ import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import { MediaPickerModal } from "@/modules/media/MediaPickerModal";
 import type { ContentDoc } from "@/types/content";
-
-/**
- * Image node that also remembers which media-library item it came from
- * (`attrs.mediaId`), so the backend can tell which images a post uses — e.g. to
- * stop one being deleted from the library while it's still in a post.
- */
-const BlogImage = Image.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      mediaId: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("data-media-id"),
-        renderHTML: (attributes) => (attributes.mediaId ? { "data-media-id": attributes.mediaId } : {}),
-      },
-    };
-  },
-}).configure({ allowBase64: true });
+import type { MarkdownSourceRef } from "@/types/markdown";
+import { editorExtensions } from "./extensions";
+import { MarkdownSourceBar } from "./MarkdownSourceBar";
+import { useMarkdownImport } from "./useMarkdownImport";
 
 export interface RichTextEditorProps {
   value: ContentDoc;
   onChange: (doc: ContentDoc) => void;
+  markdownSource: MarkdownSourceRef | null;
+  onMarkdownSourceChange: (source: MarkdownSourceRef | null) => void;
+  /** True while an imported file is uploading, so the page can block navigation. */
+  onImportingChange: (importing: boolean) => void;
 }
 
 /**
  * The post body editor. Content goes in and out as Tiptap JSON — the format the
  * backend stores — never HTML.
  */
-export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
+export function RichTextEditor({
+  value,
+  onChange,
+  markdownSource,
+  onMarkdownSourceChange,
+  onImportingChange,
+}: RichTextEditorProps) {
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [2, 3] },
-        link: { openOnClick: false, autolink: true, defaultProtocol: "https" },
-      }),
-      BlogImage,
-      Placeholder.configure({ placeholder: "Start writing your post…" }),
-    ],
+    extensions: editorExtensions,
     content: value,
     // Rendered on the client only; skipping the server pass avoids a hydration mismatch.
     immediatelyRender: false,
@@ -75,12 +61,22 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       attributes: { class: "post-content", "aria-label": "Post content", "aria-multiline": "true", role: "textbox" },
     },
   });
+  const markdownImport = useMarkdownImport(editor, onMarkdownSourceChange, onImportingChange);
 
   return (
-    <div className="rounded-lg border-[1.5px] border-line bg-card shadow-card">
-      {editor ? <Toolbar editor={editor} /> : <div className="h-[42px] border-b border-line" />}
-      <EditorContent editor={editor} className="min-h-[420px] px-6 py-5" />
-    </div>
+    <>
+      <MarkdownSourceBar
+        source={markdownSource}
+        uploading={markdownImport.uploading}
+        onImport={markdownImport.openFilePicker}
+        onRemove={() => onMarkdownSourceChange(null)}
+      />
+      {markdownImport.ui}
+      <div className="rounded-lg border-[1.5px] border-line bg-card shadow-card">
+        {editor ? <Toolbar editor={editor} /> : <div className="h-[42px] border-b border-line" />}
+        <EditorContent editor={editor} className="min-h-[420px] px-6 py-5" />
+      </div>
+    </>
   );
 }
 

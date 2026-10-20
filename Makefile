@@ -34,7 +34,7 @@ test: ## Run backend tests (needs Docker for Testcontainers)
 lint: ## Lint and typecheck the frontend
 	cd frontend && npm run lint && npm run typecheck
 
-check: test ## Everything CI would run: backend tests + frontend lint, typecheck, build
+check: test ## Everything CI would run: backend tests + frontend lint, typecheck, tests, build
 	cd frontend && npm run check
 
 clean: ## Remove build outputs

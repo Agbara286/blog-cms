@@ -2,6 +2,7 @@ package io.atomity.blogcms.post.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.atomity.blogcms.author.entity.Author;
+import io.atomity.blogcms.markdown.entity.MarkdownSource;
 import io.atomity.blogcms.media.entity.Media;
 import io.atomity.blogcms.shared.Timestamps;
 import io.atomity.blogcms.tag.entity.Tag;
@@ -72,6 +73,11 @@ public class Post {
 
     @Column(name = "cover_image_alt", nullable = false)
     private String coverImageAlt;
+
+    /** The .md file the content was imported from, if any. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "markdown_source_id")
+    private MarkdownSource markdownSource;
 
     @Column(name = "seo_title", nullable = false)
     private String seoTitle;
@@ -147,6 +153,7 @@ public class Post {
         this.readingTimeMinutes = edit.readingTimeMinutes();
         this.coverImage = edit.coverImage();
         this.coverImageAlt = edit.coverImageAlt();
+        this.markdownSource = edit.markdownSource();
         this.seoTitle = edit.seoTitle();
         this.metaDescription = edit.metaDescription();
         this.focusKeyword = edit.focusKeyword();
@@ -193,7 +200,7 @@ public class Post {
         copy.status = PostStatus.DRAFT;
         copy.createdAt = Timestamps.now();
         copy.edit(new PostEdit(newTitle, newSlug, excerpt, content.deepCopy(), contentText, wordCount, readingTimeMinutes,
-                coverImage, coverImageAlt, seoTitle, metaDescription, focusKeyword, canonicalUrl, false,
+                coverImage, coverImageAlt, markdownSource, seoTitle, metaDescription, focusKeyword, canonicalUrl, false,
                 authors, tags, inlineImages));
         return copy;
     }
@@ -217,6 +224,7 @@ public class Post {
     public boolean isFeatured() { return featured; }
     public Media getCoverImage() { return coverImage; }
     public String getCoverImageAlt() { return coverImageAlt; }
+    public MarkdownSource getMarkdownSource() { return markdownSource; }
     public String getSeoTitle() { return seoTitle; }
     public String getMetaDescription() { return metaDescription; }
     public String getFocusKeyword() { return focusKeyword; }

@@ -170,7 +170,7 @@ make install && make frontend             # Next.js on :3000 (also enables the g
 |--------------|----------------------------------------------------------------|
 | `make test`  | Backend tests (Testcontainers starts a real Postgres)          |
 | `make lint`  | Frontend lint + typecheck                                      |
-| `make check` | Everything: backend tests, frontend lint, typecheck and build  |
+| `make check` | Everything: backend tests, frontend lint, types, tests, build  |
 
 ## Configuration
 
@@ -235,7 +235,7 @@ pick an issue ──► comment to claim it ──► fork + branch ──► co
 5. **Make the change.** Keep it scoped to the issue — one issue per pull request. Follow
    the conventions in [`docs/architecture.md`](docs/architecture.md) and add or update
    tests for what you changed.
-6. **Check before you push.** Run `make check` (backend tests, frontend lint, typecheck and
+6. **Check before you push.** Run `make check` (backend tests, frontend lint, typecheck, tests and
    build). The pre-commit hook runs the checks for the parts you staged; the pre-push hook
    blocks direct pushes to `main`.
 7. **Commit and push.** Use [Conventional Commits](https://www.conventionalcommits.org/),

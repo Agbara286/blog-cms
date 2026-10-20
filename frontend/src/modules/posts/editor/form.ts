@@ -1,6 +1,7 @@
 import { EMPTY_DOC } from "@/lib/content";
 import { SLUG_PATTERN, slugify } from "@/lib/slug";
 import type { ContentDoc } from "@/types/content";
+import type { MarkdownSourceRef } from "@/types/markdown";
 import type { MediaRef } from "@/types/media";
 import { POST_LIMITS, type Post, type PostInput } from "@/types/post";
 
@@ -12,6 +13,7 @@ export interface EditorForm {
   content: ContentDoc;
   cover: MediaRef | null;
   coverImageAlt: string;
+  markdownSource: MarkdownSourceRef | null;
   seoTitle: string;
   metaDescription: string;
   focusKeyword: string;
@@ -30,6 +32,7 @@ export const EMPTY_FORM: EditorForm = {
   content: EMPTY_DOC,
   cover: null,
   coverImageAlt: "",
+  markdownSource: null,
   seoTitle: "",
   metaDescription: "",
   focusKeyword: "",
@@ -47,6 +50,7 @@ export function formFromPost(post: Post): EditorForm {
     content: post.content,
     cover: post.coverImage,
     coverImageAlt: post.coverImageAlt,
+    markdownSource: post.markdownSource,
     seoTitle: post.seoTitle,
     metaDescription: post.metaDescription,
     focusKeyword: post.focusKeyword,
@@ -70,6 +74,7 @@ export function inputFromForm(form: EditorForm): PostInput {
     content: form.content,
     coverImageId: form.cover?.id ?? null,
     coverImageAlt: form.coverImageAlt,
+    markdownSourceId: form.markdownSource?.id ?? null,
     seoTitle: form.seoTitle,
     metaDescription: form.metaDescription,
     focusKeyword: form.focusKeyword,

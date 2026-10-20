@@ -12,12 +12,14 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "prepare": "cd .. && git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.31.4",
     "@tiptap/extensions": "^3.31.4",
+    "@tiptap/markdown": "^3.31.4",
     "@tiptap/pm": "^3.31.4",
     "@tiptap/react": "^3.31.4",
     "@tiptap/starter-kit": "^3.31.4",
@@ -36,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.12"
   }
 }

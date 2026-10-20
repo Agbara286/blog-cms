@@ -67,14 +67,16 @@ function PostEditor({ initial }: { initial: Post | null }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // The slug follows the title until someone edits it by hand — except on posts that
   // already have their own slug, where changing the title must not move the URL.
   const slugFollowsTitle = useRef(!initial || (initial.status === "DRAFT" && initial.slug === slugify(initial.title)));
 
   const dirty = JSON.stringify(form) !== savedSnapshot;
-  useUnsavedChangesWarning(dirty);
-  useBlockNavigation(dirty);
+  // A Markdown import still uploading counts as unsaved: leaving now would lose it.
+  useUnsavedChangesWarning(dirty || importing);
+  useBlockNavigation(dirty || importing);
   const guardedNavigate = useGuardedNavigate();
 
   const errors = useMemo(() => validateForm(form), [form]);
@@ -96,6 +98,10 @@ function PostEditor({ initial }: { initial: Post | null }) {
   }, []);
 
   const onContentChange = useCallback((content: EditorForm["content"]) => change({ content }), [change]);
+  const onMarkdownSourceChange = useCallback(
+    (markdownSource: EditorForm["markdownSource"]) => change({ markdownSource }),
+    [change],
+  );
 
   const reportError = (error: unknown) => {
     toast.error(error instanceof Error ? error.message : "Something went wrong.");
@@ -103,6 +109,11 @@ function PostEditor({ initial }: { initial: Post | null }) {
 
   /** Saves the form; resolves to the saved post, or null if it couldn't be saved. */
   const save = async (options: { quiet?: boolean } = {}): Promise<Post | null> => {
+    // Saving now would store the post without the file that is still uploading.
+    if (importing) {
+      toast.info("Wait for the Markdown import to finish.");
+      return null;
+    }
     if (hasErrors) {
       setShowErrors(true);
       toast.error("Fix the highlighted fields before saving.");
@@ -189,6 +200,8 @@ function PostEditor({ initial }: { initial: Post | null }) {
     ...(post ? ["separator" as const, { label: "Delete", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(true) }] : []),
   ];
 
+  // Header actions wait for both a running request and an import that is still uploading.
+  const locked = busy !== null || importing;
   const saveState = busy === "save" ? "Saving…" : dirty ? "Unsaved changes" : post ? `Saved ${timeAgo(post.updatedAt)}` : "Not saved yet";
 
   return (
@@ -206,13 +219,13 @@ function PostEditor({ initial }: { initial: Post | null }) {
 
         <div className="ml-auto flex items-center gap-2">
           {status === "PUBLISHED" ? (
-            <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={busy !== null || (!dirty && Boolean(post))}>
+            <button type="button" className="btn btn-primary" onClick={() => void save()} disabled={locked || (!dirty && Boolean(post))}>
               {busy === "save" && <Spinner size={12} />}
               Update
             </button>
           ) : (
             <>
-              <button type="button" className="btn btn-secondary" onClick={() => void save()} disabled={busy !== null || (!dirty && Boolean(post))}>
+              <button type="button" className="btn btn-secondary" onClick={() => void save()} disabled={locked || (!dirty && Boolean(post))}>
                 {busy === "save" && <Spinner size={12} />}
                 {status === "ARCHIVED" ? "Save" : "Save draft"}
               </button>
@@ -220,7 +233,7 @@ function PostEditor({ initial }: { initial: Post | null }) {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy !== null}
+                  disabled={locked}
                   onClick={() => void changeStatus(unpublishPost, "Restored to drafts.", "status")}
                 >
                   {busy === "status" ? <Spinner size={12} /> : <Undo2 size={13} aria-hidden />}
@@ -230,7 +243,7 @@ function PostEditor({ initial }: { initial: Post | null }) {
                 <button
                   type="button"
                   className="btn btn-green"
-                  disabled={busy !== null}
+                  disabled={locked}
                   onClick={() => void changeStatus(publishPost, "Post published.", "publish")}
                 >
                   {busy === "publish" ? <Spinner size={12} /> : <Send size={13} aria-hidden />}
@@ -282,7 +295,13 @@ function PostEditor({ initial }: { initial: Post | null }) {
               )}
             </div>
           </div>
-          <RichTextEditor value={form.content} onChange={onContentChange} />
+          <RichTextEditor
+            value={form.content}
+            onChange={onContentChange}
+            markdownSource={form.markdownSource}
+            onMarkdownSourceChange={onMarkdownSourceChange}
+            onImportingChange={setImporting}
+          />
         </div>
 
         <aside aria-label="Post settings" className="min-w-0">
