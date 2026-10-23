@@ -34,12 +34,12 @@ public record PostSummaryResponse(
                 post.getReadingTimeMinutes(), post.getPublishedAt(), post.getCreatedAt(), post.getUpdatedAt());
     }
 
-    static List<AuthorRef> authorRefs(Post post) {
+    public static List<AuthorRef> authorRefs(Post post) {
         return post.getAuthors().stream().map(AuthorRef::of).toList();
     }
 
     /** Tags are a set; sort by name so responses are stable. */
-    static List<TagRef> tagRefs(Post post) {
+    public static List<TagRef> tagRefs(Post post) {
         return post.getTags().stream().map(TagRef::of).sorted(Comparator.comparing(TagRef::name)).toList();
     }
 }

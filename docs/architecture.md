@@ -35,8 +35,9 @@ There is one admin account, configured through environment variables
    (5 per 15 minutes).
 2. The frontend keeps the token in an httpOnly cookie and forwards it as
    `Authorization: Bearer` on every API call.
-3. Everything under `/api/v1` needs the token, except login and
-   `GET /api/v1/media/{id}/file` (images are public so published pages can embed them).
+3. Everything under `/api/v1` needs the token, except login,
+   `GET /api/v1/media/{id}/file` (images are public so published pages can embed them)
+   and the public blog reads (`GET /api/v1/blogs`, `/blogs/{id}`, `/blogs/slug/{slug}`).
 
 ## API
 
@@ -47,6 +48,8 @@ All under `/api/v1`, JSON in camelCase, wrapped in the response envelope.
 | `POST /auth/login` | Exchange admin credentials for a token |
 | `GET /posts?status&q&tag&author&sort&direction&page&size` | Paginated list (`meta` holds page info) |
 | `GET /posts/counts` | Posts per status, for the list tabs |
+| `GET /blogs?sort&direction&page&size` | **Public.** Published posts, newest first (`meta` holds page info) |
+| `GET /blogs/{id}` · `GET /blogs/slug/{slug}` | **Public.** One published post with its full content |
 | `GET/PUT/DELETE /posts/{id}`, `POST /posts` | Read, update (send the loaded `version`), delete, create |
 | `POST /posts/{id}/publish` · `/unpublish` · `/archive` · `/duplicate` | Lifecycle actions |
 | `GET/POST /authors`, `PUT/DELETE /authors/{id}` | Authors |
@@ -72,6 +75,88 @@ All under `/api/v1`, JSON in camelCase, wrapped in the response envelope.
   or removing it, or deleting the post, deletes the file once no post uses it (a duplicate shares
   it); the post content stays.
 - Deleting an author or tag removes it from posts; the posts stay.
+- The public blog (the `GET /blogs…` reads) only ever returns `PUBLISHED` posts; anything
+  else — draft, archived, unpublished, unknown — answers `404 NOT_FOUND`, so the existence
+  of a draft is never revealed. Public responses omit the editor-only fields `status`,
+  `version`, `createdAt` and `focusKeyword`; the detail response adds the body and SEO
+  metadata, the list stays body-free with `publishedAt` default-descending.
+
+### Public blog API
+
+No `Authorization` header is needed for the three `GET /blogs…` endpoints. An invalid or
+expired header is still rejected with `401` — the bearer filter runs on public paths too.
+
+```bash
+curl -s 'http://localhost:8080/api/v1/blogs?sort=publishedAt&direction=desc&size=2'
+curl -s  http://localhost:8080/api/v1/blogs/8b1d0d0e-2f4a-4c1e-9d6b-3f0a1c2d4e5f
+curl -s  http://localhost:8080/api/v1/blogs/slug/rightsizing-kubernetes-pods
+curl -si http://localhost:8080/api/v1/blogs/<draft-id>            # 404: drafts stay invisible
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "8b1d0d0e-2f4a-4c1e-9d6b-3f0a1c2d4e5f",
+      "title": "Rightsizing Kubernetes pods",
+      "slug": "rightsizing-kubernetes-pods",
+      "excerpt": "Requests vs limits, in one table.",
+      "featured": false,
+      "authors": [{ "id": "2c9f…", "name": "Lena", "avatar": null }],
+      "tags": [{ "id": "77aa…", "name": "Kubernetes", "slug": "kubernetes" }],
+      "coverImage": null,
+      "wordCount": 612,
+      "readingTimeMinutes": 3,
+      "publishedAt": "2026-10-18T09:12:44.123456Z",
+      "updatedAt": "2026-10-18T09:12:44.123456Z"
+    }
+  ],
+  "meta": { "page": 0, "size": 2, "totalElements": 1, "totalPages": 1 }
+}
+```
+
+`GET /blogs/{id}` and `GET /blogs/slug/{slug}` return one object instead of a list, with
+the body and SEO fields added:
+
+```json
+{
+  "data": {
+    "id": "8b1d0d0e-2f4a-4c1e-9d6b-3f0a1c2d4e5f",
+    "title": "Rightsizing Kubernetes pods",
+    "slug": "rightsizing-kubernetes-pods",
+    "excerpt": "Requests vs limits, in one table.",
+    "featured": false,
+    "authors": [{ "id": "2c9f…", "name": "Lena", "avatar": null }],
+    "tags": [{ "id": "77aa…", "name": "Kubernetes", "slug": "kubernetes" }],
+    "coverImage": { "id": "9f31…", "url": "/api/v1/media/9f31…/file", "altText": "Pods and node capacity" },
+    "wordCount": 612,
+    "readingTimeMinutes": 3,
+    "publishedAt": "2026-10-18T09:12:44.123456Z",
+    "updatedAt": "2026-10-18T09:12:44.123456Z",
+    "content": { "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Requests vs limits…" }] }] },
+    "coverImageAlt": "Pods and node capacity",
+    "seoTitle": "Rightsizing Kubernetes pods",
+    "metaDescription": "How to set requests and limits without guessing.",
+    "canonicalUrl": "https://example.com/blog/rightsizing-kubernetes-pods"
+  }
+}
+```
+
+A post that is not published — draft, archived, unpublished or unknown — answers `404`
+with the standard error envelope (a malformed UUID on the id route answers
+`400 BAD_REQUEST` instead):
+
+```json
+{
+  "errors": [
+    {
+      "errorCode": "NOT_FOUND",
+      "message": "Blog not found",
+      "correlationId": "3f9c0f9a2b7e4a5f"
+    }
+  ]
+}
+```
 
 ## Backend layout
 
@@ -84,6 +169,7 @@ io.atomity.blogcms
 │                      CorrelationFilter, PageMeta, Slugs, Timestamps
 ├── auth/              config/ (SecurityConfig, AuthProperties) controller/ dto/ service/
 ├── post/              controller/ dto/ entity/ repository/ service/ (ContentAnalyzer)
+├── blog/              controller/ dto/ service/ (public, read-only view of published posts)
 ├── author/ tag/       controller/ dto/ entity/ repository/ service/
 ├── media/             … plus storage/ (StorageService, local-disk implementation)
 └── markdown/          controller/ dto/ entity/ repository/ service/ (files stored via StorageService)
