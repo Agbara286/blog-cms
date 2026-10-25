@@ -31,7 +31,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   };
 
   return (
-    <aside
+   <aside
       className="flex h-full shrink-0 flex-col overflow-hidden border-r-[1.5px] border-line bg-page transition-[width] duration-200"
       style={{ width: collapsed ? "var(--shell-sidebar-w-collapsed)" : "var(--shell-sidebar-w)" }}
     >

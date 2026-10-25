@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { ToastProvider } from "@/components/ui/Toast";
 import { NavigationGuardProvider } from "./NavigationGuard";
@@ -15,15 +15,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
+ // Ensure sidebar starts closed on mobile, and auto-closes when navigating
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      const timer = setTimeout(() => setCollapsed(true), 0);
+      return () => clearTimeout(timer);
+    }
+  }, [pathname]);
+
   return (
     <ToastProvider>
       <NavigationGuardProvider>
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar collapsed={collapsed} />
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex h-screen overflow-hidden relative w-full">
+          
+          {/* Mobile Backdrop (closes sidebar when clicked) */}
+          {!collapsed && (
+            <div 
+              className="fixed inset-0 z-40 bg-black/20 md:hidden"
+              onClick={() => setCollapsed(true)}
+            />
+          )}
+
+          {/* Sidebar Mobile Drawer & Desktop Static */}
+          <div 
+            className={`absolute inset-y-0 left-0 z-50 transform transition-transform duration-200 md:relative md:translate-x-0 ${
+              collapsed ? "-translate-x-full pointer-events-none md:pointer-events-auto" : "translate-x-0 pointer-events-auto"
+            }`}
+          >
+            <Sidebar collapsed={collapsed} />
+          </div>
+
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden w-full">
             <TopBar breadcrumb={resolveBreadcrumb(pathname)} onToggleSidebar={() => setCollapsed((c) => !c)} />
-            <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+            
+            {/* Added overflow-auto to fix horizontal scrolling on mobile tables */}
+            <div className="min-h-0 flex-1 overflow-auto">{children}</div>
           </main>
+          
         </div>
       </NavigationGuardProvider>
     </ToastProvider>
